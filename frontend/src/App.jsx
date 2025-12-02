@@ -4,9 +4,9 @@ import { ethers } from "ethers";
 // === YOUR DEPLOYED ADDRESSES ===
 // === DEPLOYED CONTRACT ADDRESSES ===
 const CROWDFUND_CONTRACT_ADDRESS =
-  "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+  "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const ATTACKER_CONTRACT_ADDRESS =
-  "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707";
+  "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 
 // === WELL-KNOWN LOCAL ACCOUNTS ===
 const ATTACKER_ACCOUNT_ADDRESS =
@@ -105,7 +105,7 @@ function App() {
         color: matches ? "#22c55e" : "#ef4444",
         text: matches
           ? "Connected as Attacker (Imported Account 1)."
-          : "You selected Attacker, but MetaMask is using a different address. Please switch to Imported Account 1 in MetaMask.",
+          : "",
       };
     }
 
@@ -114,7 +114,7 @@ function App() {
       color: matches ? "#22c55e" : "#ef4444",
       text: matches
         ? "Connected as Honest User (Imported Account 2)."
-        : "You selected Honest User, but MetaMask is using a different address. Please switch to Imported Account 2 in MetaMask.",
+        : "",
     };
   }, [account, selectedRole]);
 
