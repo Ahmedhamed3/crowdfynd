@@ -1,9 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
 
 // === YOUR DEPLOYED ADDRESSES ===
-const CROWDFUND_ADDRESS = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
-const ATTACKER_ADDRESS  = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+// === DEPLOYED CONTRACT ADDRESSES ===
+const CROWDFUND_CONTRACT_ADDRESS =
+  "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+const ATTACKER_CONTRACT_ADDRESS =
+  "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707";
+
+// === WELL-KNOWN LOCAL ACCOUNTS ===
+const ATTACKER_ACCOUNT_ADDRESS =
+  "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
+const HONEST_ACCOUNT_ADDRESS = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
 
 // Minimal ABIs (only the functions we use)
 const CROWDFUND_ABI = [
@@ -25,6 +33,7 @@ function App() {
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [account, setAccount] = useState(null);
+  const [selectedRole, setSelectedRole] = useState("honest");
 
   const [crowdfund, setCrowdfund] = useState(null);
   const [attacker, setAttacker] = useState(null);
@@ -48,15 +57,15 @@ function App() {
       const _provider = new ethers.BrowserProvider(window.ethereum);
       await _provider.send("eth_requestAccounts", []);
       const _signer = await _provider.getSigner();
-      const _account = await _signer.getAddress();
+       const _account = (await _signer.getAddress()).toLowerCase();
 
       const _crowdfund = new ethers.Contract(
-        CROWDFUND_ADDRESS,
+        CROWDFUND_CONTRACT_ADDRESS,
         CROWDFUND_ABI,
         _signer
       );
       const _attacker = new ethers.Contract(
-        ATTACKER_ADDRESS,
+        ATTACKER_CONTRACT_ADDRESS,
         ATTACKER_ABI,
         _signer
       );
@@ -73,6 +82,41 @@ function App() {
       setStatus("Failed to connect wallet ❌");
     }
   };
+
+  const shortenedAddress = (addr) =>
+    `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+
+  const selectedRoleLabel =
+    selectedRole === "attacker"
+      ? "Attacker – Imported Account 1"
+      : "Honest User – Imported Account 2";
+
+  const roleStatus = useMemo(() => {
+    if (!account) {
+      return {
+        color: "#eab308",
+        text: "Connect MetaMask to compare the selected role with the active account.",
+      };
+    }
+
+    if (selectedRole === "attacker") {
+      const matches = account === ATTACKER_ACCOUNT_ADDRESS.toLowerCase();
+      return {
+        color: matches ? "#22c55e" : "#ef4444",
+        text: matches
+          ? "Connected as Attacker (Imported Account 1)."
+          : "You selected Attacker, but MetaMask is using a different address. Please switch to Imported Account 1 in MetaMask.",
+      };
+    }
+
+    const matches = account === HONEST_ACCOUNT_ADDRESS.toLowerCase();
+    return {
+      color: matches ? "#22c55e" : "#ef4444",
+      text: matches
+        ? "Connected as Honest User (Imported Account 2)."
+        : "You selected Honest User, but MetaMask is using a different address. Please switch to Imported Account 2 in MetaMask.",
+    };
+  }, [account, selectedRole]);
 
   // Load balances / goal
   const refreshData = async () => {
@@ -183,69 +227,151 @@ function App() {
     <div
       style={{
         minHeight: "100vh",
+        width: "100%",
         background: "#050816",
         color: "#e5e7eb",
         fontFamily: "system-ui, sans-serif",
         display: "flex",
         justifyContent: "center",
-        padding: "32px 12px",
+        padding: "40px 16px",
       }}
     >
-      <div style={{ maxWidth: "900px", width: "100%" }}>
-        <h1 style={{ fontSize: "26px", marginBottom: "8px" }}>
-          🧪 Crowdfunding Attack Lab
-        </h1>
-        <p style={{ fontSize: "13px", opacity: 0.75, marginBottom: "16px" }}>
-          Visualizing a reentrancy attack on a vulnerable crowdfunding smart
-          contract (Hardhat local network).
-        </p>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "1200px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+        }}
+      >
+        <header style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <h1 style={{ fontSize: "28px", margin: 0 }}>
+            🧪 Crowdfunding Attack Lab
+          </h1>
+          <p style={{ fontSize: "14px", opacity: 0.8, margin: 0 }}>
+            Visualizing a reentrancy attack on a vulnerable crowdfunding smart contract
+            (Hardhat local network). Use the role selector to view the flows as the attacker
+            or the honest user.
+          </p>
+        </header>
 
-        {/* Top bar */}
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            flexDirection: "column",
             gap: "12px",
-            marginBottom: "16px",
+            background: "#0b1224",
+            border: "1px solid #1f2937",
+            borderRadius: "14px",
+            padding: "14px",
           }}
         >
-          <button
-            onClick={connectWallet}
+          <div
             style={{
-              padding: "8px 14px",
-              borderRadius: "999px",
-              border: "none",
-              background: "#22c55e",
-              color: "#020617",
-              fontWeight: 600,
-              cursor: "pointer",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "10px",
+              alignItems: "center",
+              justifyContent: "space-between",
             }}
           >
-            {account ? "Wallet Connected" : "Connect MetaMask"}
-          </button>
+            <div style={{ fontSize: "13px", opacity: 0.85 }}>
+              Viewing as: <strong>{selectedRoleLabel}</strong>
+            </div>
+            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+              {account && (
+                <div
+                  style={{
+                    fontSize: "12px",
+                    padding: "6px 12px",
+                    borderRadius: "999px",
+                    background: "#0f172a",
+                    border: "1px solid #1f2937",
+                    fontFamily: "monospace",
+                  }}
+                >
+                  Active: {shortenedAddress(account)}
+                </div>
+              )}
+              <button
+                onClick={connectWallet}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: "999px",
+                  border: "none",
+                  background: "#22c55e",
+                  color: "#020617",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+              >
+                {account ? "Wallet Connected" : "Connect MetaMask"}
+              </button>
+            </div>
+          </div>
 
-          {account && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div style={{ fontSize: "13px", opacity: 0.9 }}>Choose a role to view the flows:</div>
             <div
               style={{
-                fontSize: "12px",
-                padding: "6px 12px",
-                borderRadius: "999px",
-                background: "#0f172a",
-                border: "1px solid #1f2937",
-                fontFamily: "monospace",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "10px",
               }}
             >
-              {account.slice(0, 6)}...{account.slice(-4)}
+              <button
+                onClick={() => setSelectedRole("attacker")}
+                style={{
+                  padding: "12px",
+                  borderRadius: "12px",
+                  border: selectedRole === "attacker" ? "1px solid #22c55e" : "1px solid #1f2937",
+                  background: selectedRole === "attacker" ? "rgba(34, 197, 94, 0.1)" : "#0f172a",
+                  color: "#e5e7eb",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: "4px" }}>
+                  Attacker – Imported Account 1
+                </div>
+                <div style={{ fontSize: "12px", opacity: 0.8 }}>
+                  {shortenedAddress(ATTACKER_ACCOUNT_ADDRESS)}
+                </div>
+              </button>
+
+              <button
+                onClick={() => setSelectedRole("honest")}
+                style={{
+                  padding: "12px",
+                  borderRadius: "12px",
+                  border: selectedRole === "honest" ? "1px solid #22c55e" : "1px solid #1f2937",
+                  background: selectedRole === "honest" ? "rgba(34, 197, 94, 0.1)" : "#0f172a",
+                  color: "#e5e7eb",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: "4px" }}>
+                  Honest User – Imported Account 2
+                </div>
+                <div style={{ fontSize: "12px", opacity: 0.8 }}>
+                  {shortenedAddress(HONEST_ACCOUNT_ADDRESS)}
+                </div>
+              </button>
             </div>
-          )}
+            <div style={{ fontSize: "12px", color: roleStatus.color }}>
+              {roleStatus.text}
+            </div>
+          </div>
         </div>
 
         {status && (
           <div
             style={{
-              fontSize: "12px",
-              marginBottom: "14px",
-              padding: "8px 10px",
+              padding: "10px 12px",
+              borderRadius: "10px",
               borderRadius: "8px",
               background: "#0b1120",
               border: "1px solid #1e293b",
@@ -255,12 +381,14 @@ function App() {
           </div>
         )}
 
-        {/* Two-column cards */}
+        
         <div
           style={{
+            width: "100%",
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: "16px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: "20px",
+            marginTop: "4px",
           }}
         >
           {/* Crowdfund card */}
@@ -268,7 +396,7 @@ function App() {
             style={{
               background: "#020617",
               borderRadius: "16px",
-              padding: "16px",
+              padding: "18px",
               border: "1px solid #1f2937",
               boxShadow: "0 20px 40px rgba(15,23,42,0.6)",
             }}
@@ -276,9 +404,9 @@ function App() {
             <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>
               🏦 Vulnerable Crowdfund
             </h2>
-            <p style={{ fontSize: "12px", opacity: 0.75, marginBottom: "10px" }}>
-              Goal must NOT be reached for the attack. Refund logic is
-              vulnerable (reentrancy).
+            <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
+              Goal must NOT be reached for the attack. Refund logic is vulnerable (reentrancy).
+              Honest users are typically contributing and requesting refunds from this panel.
             </p>
 
             <div
@@ -296,15 +424,18 @@ function App() {
               <div>💰 Contract balance: {contractBalance} ETH</div>
             </div>
 
-            <div style={{ fontSize: "13px", marginBottom: "6px" }}>
-              Contribute (as honest user)
+            <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+              Contribute (usually the honest user – Imported Account 2)
+            </div>
+            <div style={{ fontSize: "11px", opacity: 0.75, marginBottom: "6px" }}>
+              You selected: {selectedRoleLabel}
             </div>
             <input
               value={contributeAmount}
               onChange={(e) => setContributeAmount(e.target.value)}
               style={{
                 width: "100%",
-                padding: "8px",
+                padding: "10px",
                 borderRadius: "10px",
                 border: "1px solid #1f2937",
                 background: "#020617",
@@ -317,12 +448,12 @@ function App() {
               onClick={handleContribute}
               style={{
                 width: "100%",
-                padding: "8px",
+                padding: "10px",
                 borderRadius: "10px",
                 border: "none",
                 background: "#3b82f6",
                 color: "white",
-                fontWeight: 500,
+                fontWeight: 600,
                 cursor: "pointer",
                 marginBottom: "8px",
               }}
@@ -337,7 +468,7 @@ function App() {
                 onClick={handleRefund}
                 style={{
                   flex: 1,
-                  padding: "8px",
+                  padding: "10px",
                   borderRadius: "10px",
                   border: "1px solid #1f2937",
                   background: "#020617",
@@ -352,7 +483,7 @@ function App() {
                 onClick={handleOwnerWithdraw}
                 style={{
                   flex: 1,
-                  padding: "8px",
+                  padding: "10px",
                   borderRadius: "10px",
                   border: "1px solid #1f2937",
                   background: "#020617",
@@ -371,7 +502,7 @@ function App() {
             style={{
               background: "#020617",
               borderRadius: "16px",
-              padding: "16px",
+              padding: "18px",
               border: "1px solid #1f2937",
               boxShadow: "0 20px 40px rgba(15,23,42,0.6)",
             }}
@@ -379,9 +510,9 @@ function App() {
             <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>
               👾 Attacker Contract
             </h2>
-            <p style={{ fontSize: "12px", opacity: 0.75, marginBottom: "10px" }}>
-              Reentrancy attacker that abuses refund() to drain the contract.
-              Two stages: drain → withdraw loot.
+            <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
+              Reentrancy attacker that abuses refund() to drain the contract. These actions
+              are typically done with Imported Account 1.
             </p>
 
             <div
@@ -396,10 +527,14 @@ function App() {
             >
               <div>🧨 Attacker balance: {attackerBalance} ETH</div>
               <div
+                style={{ fontSize: "11px", opacity: 0.75, marginTop: "4px" }}
+              >
+                Selected role: {selectedRoleLabel}
+              </div>
+              <div
                 style={{ fontSize: "11px", opacity: 0.6, marginTop: "4px" }}
               >
-                (After attack, this should be high; after "Withdraw loot", it
-                returns to 0 and goes to your wallet.)
+                (After attack, this should be high; after "Withdraw loot", it returns to 0 and goes to your wallet.)
               </div>
             </div>
 
@@ -411,7 +546,7 @@ function App() {
               onChange={(e) => setAttackAmount(e.target.value)}
               style={{
                 width: "100%",
-                padding: "8px",
+                padding: "10px",
                 borderRadius: "10px",
                 border: "1px solid #1f2937",
                 background: "#020617",
@@ -424,12 +559,12 @@ function App() {
               onClick={handleAttack}
               style={{
                 width: "100%",
-                padding: "8px",
+                padding: "10px",
                 borderRadius: "10px",
                 border: "none",
                 background: "#ef4444",
                 color: "white",
-                fontWeight: 500,
+                fontWeight: 600,
                 cursor: "pointer",
                 marginBottom: "8px",
               }}
@@ -441,7 +576,7 @@ function App() {
               onClick={handleWithdrawLoot}
               style={{
                 width: "100%",
-                padding: "8px",
+                padding: "10px",
                 borderRadius: "10px",
                 border: "1px solid #1f2937",
                 background: "#020617",
