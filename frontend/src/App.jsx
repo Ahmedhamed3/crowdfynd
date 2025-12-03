@@ -24,9 +24,14 @@ const CROWDFUND_ABI = [
 ];
 
 const ATTACKER_ABI = [
+  "function attacker() view returns (address)",
+  "function fundAttacker() payable",
+  "function contributeToCrowdfund(uint256 amount)",
   "function fundAndAttack() payable",
   "function withdrawLoot()",
-  "function getMyBalance() view returns (uint256)"
+  "function getMyBalance() view returns (uint256)",
+  "function getCrowdfundInfo() view returns (address, uint256, uint256, uint256)",
+  "function getAddresses() view returns (address, address)"
 ];
 
 function App() {
@@ -43,8 +48,13 @@ function App() {
   const [contractBalance, setContractBalance] = useState("0");
   const [attackerBalance, setAttackerBalance] = useState("0");
 
+  const [attackerContractBalance, setAttackerContractBalance] = useState("0");
+  const [crowdfundOwner, setCrowdfundOwner] = useState("");
   const [contributeAmount, setContributeAmount] = useState("1.0");
   const [attackAmount, setAttackAmount] = useState("1.0");
+  const [amountToFund, setAmountToFund] = useState("0.2");
+  const [amountToContributeFromContract, setAmountToContributeFromContract] =
+    useState("0.5");
   const [status, setStatus] = useState("");
 
   const hydrateWalletState = async (requestAccounts = false) => {
@@ -112,7 +122,7 @@ function App() {
         color: matches ? "#22c55e" : "#ef4444",
         text: matches
           ? "Connected as Attacker (Imported Account 1)."
-          : "",
+          : "Selected role is Attacker, but MetaMask is using Honest User. Please switch to the attacker account in MetaMask.",
       };
     }
 
@@ -121,24 +131,27 @@ function App() {
       color: matches ? "#22c55e" : "#ef4444",
       text: matches
         ? "Connected as Honest User (Imported Account 2)."
-        : "",
+        : "Selected role is Honest User, but MetaMask is using a different account. Please switch to the honest user account in MetaMask.",
     };
   }, [account, selectedRole]);
 
   // Load balances / goal
   const refreshData = async () => {
-    if (!crowdfund || !attacker) return;
+    if (!crowdfund || !attacker || !provider) return;
     try {
-      const [g, tr, bal, atkBal] = await Promise.all([
-        crowdfund.goal(),
-        crowdfund.totalRaised(),
-        crowdfund.getBalance(),
-        attacker.getMyBalance()
+      const [crowdfundInfo, atkBal, contractBal] = await Promise.all([
+        attacker.getCrowdfundInfo(),
+        attacker.getMyBalance(),
+        provider.getBalance(ATTACKER_CONTRACT_ADDRESS),
       ]);
-      setGoal(ethers.formatEther(g));
-      setTotalRaised(ethers.formatEther(tr));
-      setContractBalance(ethers.formatEther(bal));
+      const [_owner, _goal, _totalRaised, _balance] = crowdfundInfo;
+
+      setGoal(ethers.formatEther(_goal));
+      setTotalRaised(ethers.formatEther(_totalRaised));
+      setContractBalance(ethers.formatEther(_balance));
+      setCrowdfundOwner(_owner);
       setAttackerBalance(ethers.formatEther(atkBal));
+      setAttackerContractBalance(ethers.formatEther(contractBal));
     } catch (err) {
       console.error(err);
       setStatus("Failed to load data");
@@ -146,10 +159,10 @@ function App() {
   };
 
   useEffect(() => {
-    if (crowdfund && attacker) {
+    if (crowdfund && attacker && provider) {
       refreshData();
     }
-  }, [crowdfund, attacker]);
+  }, [crowdfund, attacker, provider]);
 
    // Keep UI in sync with MetaMask account changes
   useEffect(() => {
@@ -252,7 +265,70 @@ function App() {
     }
   };
 
-  const handleWithdrawLoot = async () => {
+  const ensureAttackerAccount = () => {
+    if (!account) {
+      setStatus("Connect MetaMask first.");
+      return false;
+    }
+
+    if (account !== ATTACKER_ACCOUNT_ADDRESS.toLowerCase()) {
+      setStatus(
+        "Please switch MetaMask to the attacker account to fund the attacker contract.",
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleFundAttackerContract = async () => {
+    if (!attacker) return;
+    if (!ensureAttackerAccount()) return;
+
+    try {
+      setStatus("Funding attacker contract…");
+      const tx = await attacker.fundAttacker({
+        value: ethers.parseEther(amountToFund || "0"),
+      });
+      await tx.wait();
+      setStatus("Attacker contract funded ✅");
+      refreshData();
+    } catch (err) {
+      console.error(err);
+      setStatus("Funding attacker contract failed ❌");
+    }
+  };
+
+  const handleContributeFromContract = async () => {
+    if (!attacker) return;
+    if (!ensureAttackerAccount()) return;
+
+    try {
+      setStatus("Contributing from attacker contract…");
+      const tx = await attacker.contributeToCrowdfund(
+        ethers.parseEther(amountToContributeFromContract || "0"),
+      );
+      await tx.wait();
+      setStatus("Contribution from attacker contract complete ✅");
+      refreshData();
+    } catch (err) {
+      console.error(err);
+      setStatus("Contribution from attacker contract failed ❌");
+    }
+  };
+
+  const handleRefreshContractInfo = async () => {
+    try {
+      setStatus("Refreshing contract info…");
+      await refreshData();
+      setStatus("Contract info refreshed ✅");
+    } catch (err) {
+      console.error(err);
+      setStatus("Refresh failed ❌");
+    }
+  };
+
+  t = async () => {
     if (!attacker) return;
     try {
       setStatus("Withdrawing loot to attacker wallet…");
@@ -581,6 +657,53 @@ function App() {
               </div>
             </div>
 
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                gap: "10px",
+                marginBottom: "10px",
+              }}
+            >
+              <div
+                style={{
+                  background: "#0b1120",
+                  border: "1px solid #1f2937",
+                  borderRadius: "10px",
+                  padding: "10px",
+                  fontSize: "12px",
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: "4px" }}>
+                  Contract Info
+                </div>
+                <div>Crowdfund: {CROWDFUND_CONTRACT_ADDRESS}</div>
+                <div>Attacker: {ATTACKER_CONTRACT_ADDRESS}</div>
+                <div>Owner: {crowdfundOwner || "-"}</div>
+                <div>Goal: {goal} ETH</div>
+                <div>Total raised: {totalRaised} ETH</div>
+                <div>Balance: {contractBalance} ETH</div>
+                <div>Attacker contract balance: {attackerContractBalance} ETH</div>
+                <button
+                  onClick={handleRefreshContractInfo}
+                  style={{
+                    marginTop: "8px",
+                    padding: "8px",
+                    width: "100%",
+                    borderRadius: "8px",
+                    border: "1px solid #1f2937",
+                    background: "#0f172a",
+                    color: "#e5e7eb",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                  }}
+                >
+                  Refresh Contract Info
+                </button>
+              </div>
+            </div>
+
+            
             <div style={{ fontSize: "13px", marginBottom: "6px" }}>
               Attack contribution (initial deposit)
             </div>
@@ -630,6 +753,82 @@ function App() {
             >
               Withdraw Loot to Wallet
             </button>
+
+            <div style={{ marginTop: "14px", display: "grid", gap: "12px" }}>
+              <div>
+                <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+                  Step 1: Fund attacker contract (EOA → attacker contract)
+                </div>
+                <input
+                  value={amountToFund}
+                  onChange={(e) => setAmountToFund(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #1f2937",
+                    background: "#020617",
+                    color: "#e5e7eb",
+                    fontSize: "13px",
+                    marginBottom: "8px",
+                  }}
+                />
+                <button
+                  onClick={handleFundAttackerContract}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #1f2937",
+                    background: "#0ea5e9",
+                    color: "white",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Fund Attacker Contract (EOA → Attacker Contract)
+                </button>
+              </div>
+
+              <div>
+                <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+                  Step 2: Contribute from attacker contract → vulnerable crowdfund
+                </div>
+                <input
+                  value={amountToContributeFromContract}
+                  onChange={(e) =>
+                    setAmountToContributeFromContract(e.target.value)
+                  }
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #1f2937",
+                    background: "#020617",
+                    color: "#e5e7eb",
+                    fontSize: "13px",
+                    marginBottom: "8px",
+                  }}
+                />
+                <button
+                  onClick={handleContributeFromContract}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #1f2937",
+                    background: "#8b5cf6",
+                    color: "white",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Contribute From Attacker Contract → Vulnerable Crowdfund
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
