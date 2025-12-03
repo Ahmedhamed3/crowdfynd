@@ -29,15 +29,19 @@ contract CrowdfundVulnerable {
         emit Contributed(msg.sender, msg.value);
     }
 
-    // ❌ Vulnerable refund
+    // ❌ Intentionally vulnerable refund (for reentrancy demo)
     function requestRefund() public {
         require(block.timestamp < deadline, "Too late");
         uint256 amount = contributions[msg.sender];
         require(amount > 0, "Nothing to refund");
 
-        // Vulnerability: state not updated before sending = reentrancy
-        payable(msg.sender).transfer(amount);
+        // 🔥 Vulnerability:
+        // - External call with .call forwards a lot of gas
+        // - State (contributions/totalRaised) is updated AFTER the call
+        (bool ok, ) = payable(msg.sender).call{value: amount}("");
+        require(ok, "Refund failed");
 
+        // State update happens AFTER sending → reentrancy possible
         contributions[msg.sender] = 0;
         totalRaised -= amount;
 
@@ -49,13 +53,13 @@ contract CrowdfundVulnerable {
         requestRefund();
     }
 
-    // ❌ Vulnerable withdraw (no checks)
+    // ❌ Very permissive withdraw (owner can drain any remaining funds)
     function withdraw() external {
         require(msg.sender == owner, "Not owner");
         
         uint256 amount = address(this).balance;
-
-        payable(owner).transfer(amount);
+        (bool ok, ) = payable(owner).call{value: amount}("");
+        require(ok, "Owner withdraw failed");
 
         emit Withdrawn(msg.sender, amount);
     }
