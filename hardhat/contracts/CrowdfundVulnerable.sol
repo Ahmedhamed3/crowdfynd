@@ -9,11 +9,9 @@ contract CrowdfundVulnerable {
 
     mapping(address => uint256) public contributions;
     address[] public contributors;
-    mapping(address => bool) private isContributor;
+    
 
-    // Track unique contributors for UI visualization
-    address[] private contributorsList;
-    mapping(address => bool) private hasContributed;
+    mapping(address => bool) private isContributor;
 
     event Contributed(address indexed user, uint256 amount);
     event Refunded(address indexed user, uint256 amount);
@@ -29,19 +27,15 @@ contract CrowdfundVulnerable {
         require(block.timestamp < deadline, "Campaign ended");
         require(msg.value > 0, "Send ETH");
 
-        if (!hasContributed[msg.sender]) {
-            hasContributed[msg.sender] = true;
-            contributorsList.push(msg.sender);
+        if (contributions[msg.sender] == 0) {
+            contributors.push(msg.sender);
+            isContributor[msg.sender] = true;
         }
 
         contributions[msg.sender] += msg.value;
         totalRaised += msg.value;
 
-        if (!isContributor[msg.sender]) {
-            contributors.push(msg.sender);
-            isContributor[msg.sender] = true;
-        }
-
+        
         emit Contributed(msg.sender, msg.value);
     }
 
@@ -84,17 +78,23 @@ contract CrowdfundVulnerable {
 
     // Vulnerable bulk refund flow (susceptible to DoS via failing receiver)
     function refundAll() external {
-        require(block.timestamp >= deadline, "Campaign still active");
-
-        for (uint256 i = 0; i < contributors.length; i++) {
+        uint256 length = contributors.length;
+        for (uint256 i = 0; i < length; i++) {
             address contributor = contributors[i];
             uint256 amount = contributions[contributor];
 
-            if (amount > 0) {
-                // Using transfer (2300 gas) + no error handling: any revert blocks the loop
-                payable(contributor).transfer(amount);
-                contributions[contributor] = 0;
-                totalRaised -= amount;
+            if (amount == 0) continue;
+
+            contributions[contributor] = 0;
+            totalRaised -= amount;
+
+            // use call, not transfer, to allow failure detection
+            (bool ok, ) = payable(contributor).call{value: amount}("");
+            if (!ok) {
+                // roll back this contributor's state so logic stays consistent
+                contributions[contributor] = amount;
+                totalRaised += amount;
+                revert("Refund blocked by contributor");
             }
         }
     }
@@ -104,7 +104,7 @@ contract CrowdfundVulnerable {
     }
     // Returns the list of all addresses that have ever contributed
     function getContributors() external view returns (address[] memory) {
-        return contributorsList;
+        return contributors;
     }
 
     // Helper to read a single user contribution (same as public mapping, but explicit for UI)

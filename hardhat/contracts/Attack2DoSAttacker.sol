@@ -55,6 +55,6 @@ contract Attack2DoSAttacker {
 
     // Revert on incoming refunds to block the vulnerable loop
     receive() external payable {
-        revert("DoS attacker blocking refund");
+        revert("I refuse refunds");
     }
 }
