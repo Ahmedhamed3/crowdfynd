@@ -17,6 +17,7 @@ const CROWDFUND_ABI = [
   "function owner() view returns (address)",
   "function goal() view returns (uint256)",
   "function totalRaised() view returns (uint256)",
+  "function contributions(address) view returns (uint256)",
   "function contribute() payable",
   "function requestRefund()",
   "function getBalance() view returns (uint256)",
@@ -25,8 +26,9 @@ const CROWDFUND_ABI = [
 const ATTACKER_ABI = [
   "function attacker() view returns (address)",
   "function fundAttacker() payable",
+  "function lastContributionAmount() view returns (uint256)",
   "function contributeFromContract(uint256)",
-  "function runAttack()",
+  "function runAttack(uint256)",
   "function withdrawLoot()",
 ];
 
@@ -43,12 +45,15 @@ function App() {
 
   const [goal, setGoal] = useState("0");
   const [totalRaised, setTotalRaised] = useState("0");
-  const [crowdfundOwner, setCrowdfundOwner] = useState(null)
+  const [crowdfundOwner, setCrowdfundOwner] = useState(null);
   const [crowdfundBalance, setCrowdfundBalance] = useState("0");
   const [attackerContractBalance, setAttackerContractBalance] = useState("0");
   const [attackerEOABalance, setAttackerEOABalance] = useState("0");
   const [contributeAmount, setContributeAmount] = useState("1.0");
-  const [depositAmount, setDepositAmount] = useState("1.0");
+  const [attackerFundingAmount, setAttackerFundingAmount] = useState("1.0");
+  const [attackerContributionAmount, setAttackerContributionAmount] =
+    useState("1.0");
+  const [attackAmount, setAttackAmount] = useState("1.0");
   
   
   const [status, setStatus] = useState("");
@@ -172,6 +177,31 @@ function App() {
     return true;
   };
 
+  const ensureAttackerAccount = () => {
+    if (!account) {
+      setStatus("❌ Connect MetaMask first");
+      return false;
+    }
+    const matches = account === ATTACKER_ACCOUNT_ADDRESS.toLowerCase();
+    if (!matches) {
+      setStatus("❌ Switch MetaMask to the attacker account before running attacker steps");
+    }
+    return matches;
+  };
+
+  const ensureHonestAccount = () => {
+    if (!account) {
+      setStatus("❌ Connect MetaMask first");
+      return false;
+    }
+    const matches = account === HONEST_ACCOUNT_ADDRESS.toLowerCase();
+    if (!matches) {
+      setStatus("⚠️ You selected the honest flow but MetaMask is not using the honest account");
+    }
+    return matches;
+  };
+
+
   // Load balances / goal
   const refreshData = async () => {
     if (!crowdfund || !attacker || !provider) return;
@@ -196,6 +226,7 @@ function App() {
         _goal,
         _totalRaised,
         ownerAddress,
+        _attackerContractContribution,
         _crowdfundBalanceWei,
         _attackerContractBalanceWei,
         _attackerEOABalanceWei,
@@ -203,6 +234,7 @@ function App() {
         crowdfund.goal(),
         crowdfund.totalRaised(),
         crowdfund.owner(),
+        crowdfund.contributions(ATTACKER_CONTRACT_ADDRESS),
         provider.getBalance(CROWDFUND_CONTRACT_ADDRESS),
         provider.getBalance(ATTACKER_CONTRACT_ADDRESS),
         account ? provider.getBalance(account) : Promise.resolve(0n),
@@ -217,6 +249,9 @@ function App() {
         ethers.formatEther(_attackerContractBalanceWei)
       );
       setAttackerEOABalance(ethers.formatEther(_attackerEOABalanceWei));
+      const contributed = ethers.formatEther(_attackerContractContribution);
+      setAttackAmount(contributed);
+      setAttackerContributionAmount(contributed);
     } catch (err) {
       console.error(err);
       setStatus("Failed to load data");
@@ -284,10 +319,16 @@ function App() {
   // Honest user contribution
   const handleContribute = async () => {
     if (!ensureContractsReady()) return;
+    ensureHonestAccount();
     try {
+      const value = ethers.parseEther(contributeAmount || "0");
+      if (value <= 0n) {
+        setStatus("❌ Enter a positive contribution amount");
+        return;
+      }
       setStatus("Sending contribution…");
       const tx = await crowdfund.contribute({
-        value: ethers.parseEther(contributeAmount),
+        value,
       });
       await tx.wait();
       setStatus("Contribution successful ✅");
@@ -303,10 +344,16 @@ function App() {
 
   const handleAttackerDeposit = async () => {
     if (!ensureContractsReady()) return;
+    if (!ensureAttackerAccount()) return;
     try {
+      const value = ethers.parseEther(attackerFundingAmount || "0");
+      if (value <= 0n) {
+        setStatus("❌ Enter a positive amount to fund the attacker contract");
+        return;
+      }
       setStatus("Funding attacker contract…");
       const tx = await attacker.fundAttacker({
-        value: ethers.parseEther(depositAmount || "0"),
+        value,
       });
       await tx.wait();
       setStatus("Attacker contract funded ✅");
@@ -319,10 +366,21 @@ function App() {
 
   const handleContributeFromAttacker = async () => {
     if (!ensureContractsReady()) return;
+    if (!ensureAttackerAccount()) return;
     try {
+      const value = ethers.parseEther(attackerContributionAmount || "0");
+      if (value <= 0n) {
+        setStatus("❌ Enter a positive contribution amount for the attacker contract");
+        return;
+      }
+      const contractBal = await provider.getBalance(ATTACKER_CONTRACT_ADDRESS);
+      if (contractBal < value) {
+        setStatus("❌ Attacker contract balance too low for that contribution");
+        return;
+      }
       setStatus("Contributing from attacker contract to crowdfund…");
       const tx = await attacker.contributeFromContract(
-        ethers.parseEther(depositAmount || "0")
+        value
       );
       await tx.wait();
       setStatus("Contribution sent from attacker contract ✅");
@@ -335,9 +393,15 @@ function App() {
    
   const handleRunAttack = async () => {
     if (!ensureContractsReady()) return;
+    if (!ensureAttackerAccount()) return;
     try {
+      const value = ethers.parseEther(attackAmount || "0");
+      if (value <= 0n) {
+        setStatus("❌ Attack amount must be positive and match the attacker contribution");
+        return;
+      }
       setStatus("Running reentrancy attack…");
-      const tx = await attacker.runAttack();
+      const tx = await attacker.runAttack(value);
       await tx.wait();
       setStatus("Attack transaction finished ✅");
       refreshData();
@@ -349,6 +413,7 @@ function App() {
 
   const handleWithdrawLoot = async () => {
     if (!ensureContractsReady()) return;
+    if (!ensureAttackerAccount()) return;
     try {
       setStatus("Withdrawing loot to attacker wallet…");
       const tx = await attacker.withdrawLoot();
@@ -645,8 +710,8 @@ function App() {
                   Step 1: Deposit / Fund Attacker Contract
                 </div>
                 <input
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
+                  value={attackerFundingAmount}
+                  onChange={(e) => setAttackerFundingAmount(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "10px",
@@ -680,6 +745,24 @@ function App() {
                 <div style={{ fontSize: "13px", marginBottom: "4px" }}>
                   Step 2: Contribute From Attacker Contract → Crowdfund
                 </div>
+                <div style={{ fontSize: "11px", opacity: 0.75, marginBottom: "6px" }}>
+                  Use the SAME amount here and in Step 3. This value must already sit in the attacker
+                  contract from Step 1.
+                </div>
+                <input
+                  value={attackerContributionAmount}
+                  onChange={(e) => setAttackerContributionAmount(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #0c408aff",
+                    background: "#020617",
+                    color: "#e5e7eb",
+                    fontSize: "13px",
+                    marginBottom: "8px",
+                  }}
+                />
 
                 <button
                   onClick={handleContributeFromAttacker}
@@ -703,6 +786,24 @@ function App() {
                 <div style={{ fontSize: "13px", marginBottom: "4px" }}>
                   Step 3: Run Attack (reentrancy)
                 </div>
+
+                <div style={{ fontSize: "11px", opacity: 0.75, marginBottom: "6px" }}>
+                  Enter the SAME amount used in Step 2. Run with msg.value = 0 (no extra ETH should be sent).
+                </div>
+                <input
+                  value={attackAmount}
+                  onChange={(e) => setAttackAmount(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #0c408aff",
+                    background: "#020617",
+                    color: "#e5e7eb",
+                    fontSize: "13px",
+                    marginBottom: "8px",
+                  }}
+                />
                 
                 <button
                   onClick={handleRunAttack}
