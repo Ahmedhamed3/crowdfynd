@@ -47,6 +47,33 @@ function App() {
   const [attackAmount, setAttackAmount] = useState("1.0");
   const [status, setStatus] = useState("");
 
+  const hydrateWalletState = async (requestAccounts = false) => {
+    const _provider = new ethers.BrowserProvider(window.ethereum);
+    if (requestAccounts) {
+      await _provider.send("eth_requestAccounts", []);
+    }
+
+    const _signer = await _provider.getSigner();
+    const _account = (await _signer.getAddress()).toLowerCase();
+
+    const _crowdfund = new ethers.Contract(
+      CROWDFUND_CONTRACT_ADDRESS,
+      CROWDFUND_ABI,
+      _signer
+    );
+    const _attacker = new ethers.Contract(
+      ATTACKER_CONTRACT_ADDRESS,
+      ATTACKER_ABI,
+      _signer
+    );
+
+    setProvider(_provider);
+    setSigner(_signer);
+    setAccount(_account);
+    setCrowdfund(_crowdfund);
+    setAttacker(_attacker);
+  };
+
   // Connect MetaMask
   const connectWallet = async () => {
     if (!window.ethereum) {
@@ -54,30 +81,10 @@ function App() {
       return;
     }
     try {
-      const _provider = new ethers.BrowserProvider(window.ethereum);
-      await _provider.send("eth_requestAccounts", []);
-      const _signer = await _provider.getSigner();
-       const _account = (await _signer.getAddress()).toLowerCase();
-
-      const _crowdfund = new ethers.Contract(
-        CROWDFUND_CONTRACT_ADDRESS,
-        CROWDFUND_ABI,
-        _signer
-      );
-      const _attacker = new ethers.Contract(
-        ATTACKER_CONTRACT_ADDRESS,
-        ATTACKER_ABI,
-        _signer
-      );
-
-      setProvider(_provider);
-      setSigner(_signer);
-      setAccount(_account);
-      setCrowdfund(_crowdfund);
-      setAttacker(_attacker);
+      await hydrateWalletState(true);
       setStatus("Wallet connected ✅");
-
-    } catch (err) {
+    } 
+    catch (err) {
       console.error(err);
       setStatus("Failed to connect wallet ❌");
     }
@@ -143,6 +150,42 @@ function App() {
       refreshData();
     }
   }, [crowdfund, attacker]);
+
+   // Keep UI in sync with MetaMask account changes
+  useEffect(() => {
+    if (!window.ethereum) return;
+
+    const handleAccountsChanged = async (accounts) => {
+      if (!accounts || accounts.length === 0) {
+        setAccount(null);
+        setSigner(null);
+        setCrowdfund(null);
+        setAttacker(null);
+        return;
+      }
+
+      try {
+        await hydrateWalletState();
+        setStatus("Wallet updated ✅");
+      } catch (err) {
+        console.error("Failed to hydrate after account change", err);
+        // As a fallback to avoid stale signer, reload the page
+        window.location.reload();
+      }
+    };
+
+    const handleChainChanged = () => {
+      window.location.reload();
+    };
+
+    window.ethereum.on("accountsChanged", handleAccountsChanged);
+    window.ethereum.on("chainChanged", handleChainChanged);
+
+    return () => {
+      window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+      window.ethereum.removeListener("chainChanged", handleChainChanged);
+    };
+  }, []);
 
   // Normal user contribution
   const handleContribute = async () => {
