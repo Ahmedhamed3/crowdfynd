@@ -4,9 +4,14 @@ import contractAddresses from "./contractAddresses.json";
 
 
 // === DEPLOYED CONTRACT ADDRESSES ===
-const CROWDFUND_CONTRACT_ADDRESS = contractAddresses.crowdfund;
-const ATTACKER_CONTRACT_ADDRESS = contractAddresses.attacker;
-const ATTACK2_CONTRACT_ADDRESS = contractAddresses.attack2DoSAttacker;
+const VULNERABLE_CROWDFUND_ADDRESS =
+  contractAddresses.crowdfund || contractAddresses.CrowdfundVulnerable;
+const SECURE_CROWDFUND_ADDRESS =
+  contractAddresses.crowdfundSecure || contractAddresses.CrowdfundSecure;
+const ATTACKER_CONTRACT_ADDRESS =
+  contractAddresses.attacker || contractAddresses.RefundAttacker;
+const ATTACK2_CONTRACT_ADDRESS =
+  contractAddresses.attack2DoSAttacker || contractAddresses.Attack2DoSAttacker;
 
 // === WELL-KNOWN LOCAL ACCOUNTS ===
 const ATTACKER_ACCOUNT_ADDRESS =
@@ -58,6 +63,7 @@ function App() {
   const [account, setAccount] = useState(null);
   const [chainId, setChainId] = useState(null);
   const [selectedRole, setSelectedRole] = useState("honest1");
+  const [mode, setMode] = useState("vulnerable");
 
   const [crowdfund, setCrowdfund] = useState(null);
   const [attacker, setAttacker] = useState(null);
@@ -87,6 +93,14 @@ function App() {
   
   const [status, setStatus] = useState("");
 
+  const crowdfundAddress = useMemo(
+    () =>
+      mode === "vulnerable"
+        ? VULNERABLE_CROWDFUND_ADDRESS
+        : SECURE_CROWDFUND_ADDRESS,
+    [mode]
+  );
+
   const hydrateWalletState = async (requestAccounts = false) => {
     const _provider = new ethers.BrowserProvider(window.ethereum);
     if (requestAccounts) {
@@ -106,12 +120,17 @@ function App() {
     }
 
     const [crowdfundCode, attackerCode, attack2Code] = await Promise.all([
-      _provider.getCode(CROWDFUND_CONTRACT_ADDRESS),
+      _provider.getCode(crowdfundAddress),
       _provider.getCode(ATTACKER_CONTRACT_ADDRESS),
       _provider.getCode(ATTACK2_CONTRACT_ADDRESS),
     ]);
 
-    if (crowdfundCode === "0x" || attackerCode === "0x" || attack2Code === "0x") {
+    if (
+      crowdfundCode === "0x" ||
+      attackerCode === "0x" ||
+      attack2Code === "0x" ||
+      crowdfundAddress === ethers.ZeroAddress
+    ) {
       setStatus("❌ Contract not deployed or wrong network");
       setCrowdfund(null);
       setAttacker(null);
@@ -126,7 +145,7 @@ function App() {
     const _account = (await _signer.getAddress()).toLowerCase();
 
     const _crowdfund = new ethers.Contract(
-      CROWDFUND_CONTRACT_ADDRESS,
+      crowdfundAddress,
       CROWDFUND_ABI,
       _signer
     );
@@ -301,7 +320,7 @@ function App() {
         return;
       }
       const [crowdfundCode, attackerCode, attack2Code] = await Promise.all([
-        provider.getCode(CROWDFUND_CONTRACT_ADDRESS),
+        provider.getCode(crowdfundAddress),
         provider.getCode(ATTACKER_CONTRACT_ADDRESS),
         provider.getCode(ATTACK2_CONTRACT_ADDRESS),
       ]);
@@ -328,7 +347,7 @@ function App() {
         crowdfund.owner(),
         crowdfund.contributions(ATTACKER_CONTRACT_ADDRESS),
         crowdfund.contributions(ATTACK2_CONTRACT_ADDRESS),
-        provider.getBalance(CROWDFUND_CONTRACT_ADDRESS),
+        provider.getBalance(crowdfundAddress),
         provider.getBalance(ATTACKER_CONTRACT_ADDRESS),
         provider.getBalance(ATTACK2_CONTRACT_ADDRESS),
         provider.getBalance(ATTACKER_ACCOUNT_ADDRESS),
@@ -376,6 +395,33 @@ function App() {
       refreshData();
     }
   }, [crowdfund, attacker, attack2, provider]);
+
+  useEffect(() => {
+    const syncCrowdfundForMode = async () => {
+      if (!provider || !signer) return;
+      const code = await provider.getCode(crowdfundAddress);
+      if (code === "0x" || crowdfundAddress === ethers.ZeroAddress) {
+        setStatus("❌ Contract not deployed for this mode");
+        setCrowdfund(null);
+        return;
+      }
+
+      const _crowdfund = new ethers.Contract(
+        crowdfundAddress,
+        CROWDFUND_ABI,
+        signer
+      );
+      setCrowdfund(_crowdfund);
+      setStatus(
+        mode === "vulnerable"
+          ? "Switched to 🔓 Vulnerable mode"
+          : "Switched to 🔒 Secure mode"
+      );
+    };
+
+    syncCrowdfundForMode();
+  }, [mode, provider, signer, crowdfundAddress]);
+
 
   // Load the known wallet balances once on initial render
   useEffect(() => {
@@ -510,11 +556,19 @@ function App() {
       setStatus("Running reentrancy attack…");
       const tx = await attacker.runAttack(value);
       await tx.wait();
-      setStatus("Attack transaction finished ✅");
+      setStatus(
+        mode === "vulnerable"
+          ? "Attack 1 succeeded – reentrancy drained the crowdfund ❌"
+          : "Reentrancy attempt executed – secure contract updates state before sending ETH ✅"
+      );
       refreshData();
     } catch (err) {
       console.error(err);
-      setStatus("Attack failed ❌ (check console)");
+      setStatus(
+        mode === "secure"
+          ? "Reentrancy blocked ✅ – secure crowdfund updates state before sending ETH"
+          : "Attack failed ❌ (check console)"
+      );
     }
   };
 
@@ -583,13 +637,25 @@ function App() {
     if (!ensureContractsReady()) return;
     if (!ensureAttack2Account()) return;
     try {
-      setStatus("Triggering refundAll() – expected to revert due to DoS…");
+      setStatus(
+        mode === "vulnerable"
+          ? "Triggering refundAll() – expected to revert due to DoS…"
+          : "Triggering refundAll() on secure contract (should be best-effort)…"
+      );
       const tx = await attack2.triggerRefundAll();
       await tx.wait();
-      setStatus("refundAll() completed (unexpected) ✅");
+      setStatus(
+        mode === "vulnerable"
+          ? "refundAll() completed (unexpected) ✅"
+          : "refundAll() completed (DoS attacker could not block all refunds) ✅"
+      );
     } catch (err) {
       console.error(err);
-      setStatus("refundAll() reverted – refunds blocked by DoS attacker ❌");
+      setStatus(
+        mode === "vulnerable"
+          ? "refundAll() reverted ❌ – DoS attacker blocked everyone"
+          : "Secure refundAll() handled DoS attempt (check events) ✅"
+      );
     } finally {
       refreshData();
     }
@@ -698,6 +764,66 @@ function App() {
               </button>
             </div>
           </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: "10px",
+              alignItems: "stretch",
+            }}
+          >
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: "12px",
+                border: "1px solid #1f2937",
+                background: "#0b1120",
+                display: "grid",
+                gap: "8px",
+              }}
+            >
+              <div style={{ fontSize: "13px", fontWeight: 700 }}>
+                Mode toggle
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {[
+                  { key: "vulnerable", label: "🔓 Vulnerable" },
+                  { key: "secure", label: "🔒 Secure" },
+                ].map((option) => (
+                  <button
+                    key={option.key}
+                    onClick={() => setMode(option.key)}
+                    style={{
+                      flex: 1,
+                      padding: "10px",
+                      borderRadius: "10px",
+                      border:
+                        mode === option.key
+                          ? "1px solid #22c55e"
+                          : "1px solid #1f2937",
+                      background:
+                        mode === option.key
+                          ? "rgba(34, 197, 94, 0.15)"
+                          : "#0f172a",
+                      color: "#e5e7eb",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: "12px", opacity: 0.8 }}>
+                {mode === "vulnerable"
+                  ? "Uses CrowdfundVulnerable — both attack panels remain fully exploitable."
+                  : "Uses CrowdfundSecure — reentrancy mitigated and refundAll best-effort DoS resistance."}
+              </div>
+              <div style={{ fontSize: "12px", opacity: 0.7 }}>
+                Active crowdfund: <code>{crowdfundAddress}</code>
+              </div>
+            </div>
+          </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             <div style={{ fontSize: "13px", opacity: 0.9 }}>Choose a role to view the flows:</div>
@@ -777,11 +903,12 @@ function App() {
             }}
           >
             <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>
-              🏦 Vulnerable Crowdfund
+              🏦 Crowdfund ({mode === "vulnerable" ? "🔓 Vulnerable" : "🔒 Secure"})
             </h2>
             <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
-              Goal must NOT be reached for the attack. Refund logic is vulnerable (reentrancy).
-              Honest users are typically contributing from this panel.
+              {mode === "vulnerable"
+                ? "Goal must NOT be reached for the attack. Refund logic is intentionally vulnerable so both attack panels keep working."
+                : "Hardened contract uses checks-effects-interactions and best-effort bulk refunds. Try the same attacks to see why they fail."}
             </p>
 
             <div
@@ -800,6 +927,39 @@ function App() {
               <div>🎯 Goal: {goal} ETH</div>
               <div>📈 Total raised: {totalRaised} ETH</div>
               <div>💰 Contract balance: {crowdfundBalance} ETH</div>
+            </div>
+
+            <div
+              style={{
+                background: "#0b1120",
+                borderRadius: 8,
+                padding: 12,
+                border: "1px solid #1f2937",
+                marginBottom: 12,
+                fontSize: 12,
+                display: "grid",
+                gap: 6,
+              }}
+            >
+              <div style={{ fontWeight: 700 }}>Defense status</div>
+              <div>
+                Reentrancy protection:{" "}
+                {mode === "vulnerable"
+                  ? "❌ state updates happen after sending ETH"
+                  : "✅ CEI + nonReentrant guard before sending ETH"}
+              </div>
+              <div>
+                Global refund DoS resistance:{" "}
+                {mode === "vulnerable"
+                  ? "❌ single revert blocks the entire refundAll loop"
+                  : "✅ failed refunds emit RefundFailed and loop continues"}
+              </div>
+              <div>
+                Refund pattern:{" "}
+                {mode === "vulnerable"
+                  ? "❌ push pattern – bulk sends without checks"
+                  : "✅ safer pull-first with best-effort bulk option"}
+              </div>
             </div>
 
             <h3 style={{ marginTop: 24, marginBottom: 8 }}>Contributors</h3>
@@ -847,15 +1007,27 @@ function App() {
               onClick={async () => {
                 if (!crowdfund) return;
                 try {
-                  setStatus("Calling refundAll()…");
+                  setStatus(
+                    mode === "vulnerable"
+                      ? "Calling refundAll()… (expected to revert if DoS attacker joined)"
+                      : "Calling refundAll() with best-effort refunds…"
+                  );
                   const tx = await crowdfund.refundAll();
                   await tx.wait();
-                  setStatus("refundAll() succeeded ✅");
+                  setStatus(
+                    mode === "vulnerable"
+                      ? "refundAll() succeeded unexpectedly ✅"
+                      : "refundAll() completed (DoS attacker could not block everyone) ✅"
+                  );
                   await refreshData();
                 } catch (err) {
                   console.error(err);
                   // This is where the DoS by Attack 2 is visible
-                  setStatus("refundAll() reverted ❌ (maybe blocked by DoS attacker?)");
+                  setStatus(
+                    mode === "vulnerable"
+                      ? "refundAll() reverted ❌ – DoS attacker blocked everyone"
+                      : "refundAll() hit a failure but loop continued – check RefundFailed events"
+                  );
                   await refreshData();
                 }
               }}
@@ -929,7 +1101,10 @@ function App() {
             </h2>
             <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
               Four-step attack: fund attacker contract → contribute from contract → run reentrancy → withdraw loot. Keep this
-              flow untouched for Attacker 1.
+              flow untouched for Attacker 1. {" "}
+              {mode === "vulnerable"
+                ? "In vulnerable mode, the refund sends before zeroing out, so the loop drains funds."
+                : "In secure mode, state is cleared before sending, so the reentrancy loop should fail."}
             </p>
 
             <div
@@ -1145,7 +1320,10 @@ function App() {
             </h2>
             <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
               Join the crowdfund with a small contribution, then trigger <code>refundAll()</code> so the attacker\'s
-              reverting fallback blocks the loop. This is independent from Attack 1.
+              reverting fallback blocks the loop. This is independent from Attack 1. {" "}
+              {mode === "vulnerable"
+                ? "In vulnerable mode the revert DoS should block everyone."
+                : "In secure mode the loop keeps going and emits RefundFailed for any reverting address."}.
             </p>
 
             <div
