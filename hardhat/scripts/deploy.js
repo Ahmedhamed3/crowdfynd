@@ -28,7 +28,7 @@ function writeAddressesToFrontend(addresses) {
 }
 
 async function main() {
-  const [deployer] = await ethers.getSigners();
+  const [deployer, , attacker2Signer] = await ethers.getSigners();
   console.log("Deploying contracts using:", deployer.address);
 
   // Deploy CrowdfundVulnerable (goal: 100 ETH, duration: 60 minutes)
@@ -48,8 +48,15 @@ async function main() {
   console.log("RefundAttacker deployed at:", attackerAddress);
 
   // Deploy Attack 2 DoS attacker and pass the crowdfund address
-  const Attack2 = await ethers.getContractFactory("Attack2DoSAttacker");
-  const attack2 = await Attack2.deploy(crowdfundAddress);
+  const Attack2 = await ethers.getContractFactory(
+    "Attack2DoSAttacker",
+    attacker2Signer
+  );
+
+  const attack2 = await Attack2.deploy(
+    crowdfund.target,
+    "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+  );
   await attack2.waitForDeployment();
 
   const attack2Address = await attack2.getAddress();

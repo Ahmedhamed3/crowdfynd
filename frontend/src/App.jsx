@@ -43,7 +43,7 @@ const ATTACK2_ABI = [
   "function attacker() view returns (address)",
   "function fundAttack2() payable",
   "function joinCrowdfund(uint256)",
-  "function blockRefunds()",
+  "function triggerRefundAll()",
   "function withdrawLoot()",
   "function getBalance() view returns (uint256)",
   "event JoinedCrowdfund(address indexed attacker, uint256 amount)",
@@ -511,14 +511,14 @@ function App() {
     if (!ensureContractsReady()) return;
     if (!ensureAttack2Account()) return;
     try {
-      const value = ethers.parseEther(attack2FundingAmount || "0");
-      if (value <= 0n) {
+      const parsedAmount = ethers.parseEther(attack2FundingAmount || "0");
+      if (parsedAmount <= 0n) {
         setStatus("❌ Enter a positive amount to fund the Attack 2 contract");
         return;
       }
 
       setStatus("Funding Attack 2 contract from attacker wallet…");
-      const tx = await attack2.fundAttack2({ value });
+      const tx = await attack2.fundAttack2({ value: parsedAmount });
       await tx.wait();
       setStatus("Attack 2 contract funded ✅");
       refreshData();
@@ -536,13 +536,13 @@ function App() {
         setStatus("❌ Enter a positive amount to join the crowdfund as Attacker 2");
         return;
       }
-      const contractBal = await provider.getBalance(ATTACK2_CONTRACT_ADDRESS);
-      if (contractBal < value) {
+      const parsedAmount = ethers.parseEther(attack2JoinAmount || "0");
+      if (parsedAmount <= 0n) {
         setStatus("❌ Attack 2 contract balance too low — fund it first");
         return;
       }
       setStatus("Joining crowdfund as DoS attacker…");
-      const tx = await attack2.joinCrowdfund(value);
+      const tx = await attack2.joinCrowdfund(parsedAmount);
       await tx.wait();
       setStatus("Attacker 2 joined the crowdfund ✅");
       refreshData();
@@ -557,7 +557,7 @@ function App() {
     if (!ensureAttack2Account()) return;
     try {
       setStatus("Triggering refundAll() – expected to revert due to DoS…");
-      const tx = await attack2.blockRefunds();
+      const tx = await attack2.triggerRefundAll();
       await tx.wait();
       setStatus("refundAll() completed (unexpected) ✅");
     } catch (err) {

