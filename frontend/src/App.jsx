@@ -41,9 +41,10 @@ const ATTACKER_ABI = [
 
 const ATTACK2_ABI = [
   "function attacker() view returns (address)",
-  "function joinCrowdfund() payable",
+  "function fundAttack2() payable",
+  "function joinCrowdfund(uint256)",
   "function blockRefunds()",
-  "function withdraw()",
+  "function withdrawLoot()",
   "function getBalance() view returns (uint256)",
   "event JoinedCrowdfund(address indexed attacker, uint256 amount)",
   "event RefundAllBlocked(address indexed attacker)",
@@ -76,6 +77,7 @@ function App() {
   const [attackerContributionAmount, setAttackerContributionAmount] =
     useState("1.0");
   const [attackAmount, setAttackAmount] = useState("1.0");
+  const [attack2FundingAmount, setAttack2FundingAmount] = useState("0.2");
   const [attack2JoinAmount, setAttack2JoinAmount] = useState("0.1");
   
   
@@ -505,6 +507,26 @@ function App() {
   };
 
   // === ATTACK 2 (DoS) ===
+  const handleAttack2Fund = async () => {
+    if (!ensureContractsReady()) return;
+    if (!ensureAttack2Account()) return;
+    try {
+      const value = ethers.parseEther(attack2FundingAmount || "0");
+      if (value <= 0n) {
+        setStatus("❌ Enter a positive amount to fund the Attack 2 contract");
+        return;
+      }
+
+      setStatus("Funding Attack 2 contract from attacker wallet…");
+      const tx = await attack2.fundAttack2({ value });
+      await tx.wait();
+      setStatus("Attack 2 contract funded ✅");
+      refreshData();
+    } catch (err) {
+      console.error(err);
+      setStatus("Funding Attack 2 contract failed ❌");
+    }
+  };
   const handleAttack2Join = async () => {
     if (!ensureContractsReady()) return;
     if (!ensureAttack2Account()) return;
@@ -514,8 +536,13 @@ function App() {
         setStatus("❌ Enter a positive amount to join the crowdfund as Attacker 2");
         return;
       }
+      const contractBal = await provider.getBalance(ATTACK2_CONTRACT_ADDRESS);
+      if (contractBal < value) {
+        setStatus("❌ Attack 2 contract balance too low — fund it first");
+        return;
+      }
       setStatus("Joining crowdfund as DoS attacker…");
-      const tx = await attack2.joinCrowdfund({ value });
+      const tx = await attack2.joinCrowdfund(value);
       await tx.wait();
       setStatus("Attacker 2 joined the crowdfund ✅");
       refreshData();
@@ -546,7 +573,7 @@ function App() {
     if (!ensureAttack2Account()) return;
     try {
       setStatus("Withdrawing any balance from Attack 2 contract…");
-      const tx = await attack2.withdraw();
+      const tx = await attack2.withdrawLoot();
       await tx.wait();
       setStatus("Attack 2 withdrawal complete ✅");
       refreshData();
@@ -1041,6 +1068,46 @@ function App() {
             </div>
 
             <div style={{ display: "grid", gap: "10px" }}>
+              <div>
+                <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+                  Step 0: Fund Attack 2 Contract
+                </div>
+                <div style={{ fontSize: "11px", opacity: 0.75, marginBottom: "6px" }}>
+                  Send ETH from Attacker 2 EOA into the Attack 2 contract so it can
+                  contribute on-chain.
+                </div>
+                <input
+                  value={attack2FundingAmount}
+                  onChange={(e) => setAttack2FundingAmount(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #0c408aff",
+                    background: "#020617",
+                    color: "#e5e7eb",
+                    fontSize: "13px",
+                    marginBottom: "8px",
+                  }}
+                />
+                <button
+                  onClick={handleAttack2Fund}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #1f2937",
+                    background: "#22c55e",
+                    color: "#020617",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Fund Attack 2 Contract
+                </button>
+              </div>
+
               <div>
                 <div style={{ fontSize: "13px", marginBottom: "4px" }}>
                   Step 1: Join Crowdfund as DoS Attacker
