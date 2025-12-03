@@ -30,7 +30,7 @@ contract CrowdfundVulnerable {
     }
 
     // ❌ Vulnerable refund
-    function refund() external {
+    function requestRefund() public {
         require(block.timestamp < deadline, "Too late");
         uint256 amount = contributions[msg.sender];
         require(amount > 0, "Nothing to refund");
@@ -42,6 +42,11 @@ contract CrowdfundVulnerable {
         totalRaised -= amount;
 
         emit Refunded(msg.sender, amount);
+    }
+
+    // Backwards compatibility for older callers
+    function refund() external {
+        requestRefund();
     }
 
     // ❌ Vulnerable withdraw (no checks)

