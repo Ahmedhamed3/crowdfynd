@@ -328,7 +328,7 @@ function App() {
     }
   };
 
-  t = async () => {
+  const handleWithdrawLoot = async () => {
     if (!attacker) return;
     try {
       setStatus("Withdrawing loot to attacker wallet…");
