@@ -146,11 +146,16 @@ function App() {
       setStatus("Failed to load data");
     }
   };
+  // Pull the latest ETH balance for the active MetaMask account and store it in state
   const refreshAttackerWalletBalance = async () => {
-    if (!provider || !signer) return;
-    const walletAddress = await signer.getAddress();
-    const bal = await provider.getBalance(walletAddress);
-    setAttackerWalletBalance(ethers.formatEther(bal));
+    // Create a fresh provider & signer from MetaMask to always target the active account
+    const _provider = new ethers.BrowserProvider(window.ethereum);
+    const _signer = await _provider.getSigner();
+    const addr = await _signer.getAddress();
+
+    // Fetch the live ETH balance from Hardhat and format it for display
+    const balWei = await _provider.getBalance(addr);
+    setAttackerWalletBalance(ethers.formatEther(balWei));
   };
 
   useEffect(() => {
@@ -158,6 +163,12 @@ function App() {
       refreshData();
     }
   }, [crowdfund, attacker, provider]);
+
+  // Load the attacker wallet balance once on initial render
+  useEffect(() => {
+    if (!window.ethereum) return;
+    refreshAttackerWalletBalance();
+  }, []);
 
    // Keep UI in sync with MetaMask account changes
   useEffect(() => {
@@ -174,6 +185,8 @@ function App() {
 
       try {
         await hydrateWalletState();
+        // Keep the displayed attacker balance aligned with the active MetaMask account
+        refreshAttackerWalletBalance();
         setStatus("Wallet updated ✅");
       } catch (err) {
         console.error("Failed to hydrate after account change", err);
@@ -223,6 +236,7 @@ function App() {
       });
       await tx.wait();
       setStatus("Deposit forwarded to vulnerable crowdfund ✅");
+      refreshAttackerWalletBalance();
       refreshData();
     } catch (err) {
       console.error(err);
