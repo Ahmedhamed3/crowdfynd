@@ -287,14 +287,15 @@ function App() {
     return matches;
   };
 
-  const loadContributors = async () => {
-    if (!crowdfund) return;
+  const loadContributors = async (contractOverride) => {
+    const targetCrowdfund = contractOverride ?? crowdfund;
+    if (!targetCrowdfund) return;
     try {
-      const addrs = await crowdfund.getContributors();
+      const addrs = await targetCrowdfund.getContributors();
 
       const rows = await Promise.all(
         addrs.map(async (addr) => {
-          const amount = await crowdfund.getContributionOf(addr);
+          const amount = await targetCrowdfund.getContributionOf(addr);
           return {
             address: addr,
             amountEth: Number(ethers.formatEther(amount)),
@@ -330,6 +331,11 @@ function App() {
         return;
       }
 
+      const crowdfundForReads = new ethers.Contract(
+        crowdfundAddress,
+        CROWDFUND_ABI,
+        provider
+      );
       const [
         _goal,
         _totalRaised,
@@ -342,11 +348,11 @@ function App() {
         _attacker1EOABalanceWei,
         _attacker2EOABalanceWei,
       ] = await Promise.all([
-        crowdfund.goal(),
-        crowdfund.totalRaised(),
-        crowdfund.owner(),
-        crowdfund.contributions(ATTACKER_CONTRACT_ADDRESS),
-        crowdfund.contributions(ATTACK2_CONTRACT_ADDRESS),
+        crowdfundForReads.goal(),
+        crowdfundForReads.totalRaised(),
+        crowdfundForReads.owner(),
+        crowdfundForReads.contributions(ATTACKER_CONTRACT_ADDRESS),
+        crowdfundForReads.contributions(ATTACK2_CONTRACT_ADDRESS),
         provider.getBalance(crowdfundAddress),
         provider.getBalance(ATTACKER_CONTRACT_ADDRESS),
         provider.getBalance(ATTACK2_CONTRACT_ADDRESS),
@@ -374,7 +380,7 @@ function App() {
         ethers.formatEther(_attack2Contribution)
       );
 
-      await loadContributors();
+      await loadContributors(crowdfundForReads);
     } catch (err) {
       console.error(err);
       setStatus("Failed to load data");
@@ -536,8 +542,8 @@ function App() {
         value
       );
       await tx.wait();
+      await refreshData();
       setStatus("Contribution sent from attacker contract ✅");
-      refreshData();
     } catch (err) {
       console.error(err);
       setStatus("Contribution from attacker contract failed ❌");
