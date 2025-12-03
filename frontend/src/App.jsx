@@ -6,11 +6,14 @@ import contractAddresses from "./contractAddresses.json";
 // === DEPLOYED CONTRACT ADDRESSES ===
 const CROWDFUND_CONTRACT_ADDRESS = contractAddresses.crowdfund;
 const ATTACKER_CONTRACT_ADDRESS = contractAddresses.attacker;
+const ATTACK2_CONTRACT_ADDRESS = contractAddresses.attack2DoSAttacker;
 
 // === WELL-KNOWN LOCAL ACCOUNTS ===
 const ATTACKER_ACCOUNT_ADDRESS =
   "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
+const ATTACKER2_ACCOUNT_ADDRESS = "0x90F79bf6EB2c4f870365E785982E1f101E93b906";  
 const HONEST_ACCOUNT_ADDRESS = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+const HONEST_ACCOUNT_2_ADDRESS = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
 
 // Minimal ABIs (only the functions we use)
 const CROWDFUND_ABI = [
@@ -20,7 +23,11 @@ const CROWDFUND_ABI = [
   "function contributions(address) view returns (uint256)",
   "function contribute() payable",
   "function requestRefund()",
+  "function refundAll()",
+  "function getContributorsCount() view returns (uint256)",
+  "function contributors(uint256) view returns (address)",
   "function getBalance() view returns (uint256)",
+
 ];
 
 const ATTACKER_ABI = [
@@ -32,15 +39,26 @@ const ATTACKER_ABI = [
   "function withdrawLoot()",
 ];
 
+const ATTACK2_ABI = [
+  "function attacker() view returns (address)",
+  "function joinCrowdfund() payable",
+  "function blockRefunds()",
+  "function withdraw()",
+  "function getBalance() view returns (uint256)",
+  "event JoinedCrowdfund(address indexed attacker, uint256 amount)",
+  "event RefundAllBlocked(address indexed attacker)",
+];
+
 function App() {
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [account, setAccount] = useState(null);
   const [chainId, setChainId] = useState(null);
-  const [selectedRole, setSelectedRole] = useState("honest");
+  const [selectedRole, setSelectedRole] = useState("honest1");
 
   const [crowdfund, setCrowdfund] = useState(null);
   const [attacker, setAttacker] = useState(null);
+  const [attack2, setAttack2] = useState(null);
 
 
   const [goal, setGoal] = useState("0");
@@ -49,11 +67,16 @@ function App() {
   const [crowdfundBalance, setCrowdfundBalance] = useState("0");
   const [attackerContractBalance, setAttackerContractBalance] = useState("0");
   const [attackerEOABalance, setAttackerEOABalance] = useState("0");
+  const [attack2ContractBalance, setAttack2ContractBalance] = useState("0");
+  const [attacker2EOABalance, setAttacker2EOABalance] = useState("0");
+  const [attack2CrowdfundContribution, setAttack2CrowdfundContribution] =
+    useState("0");
   const [contributeAmount, setContributeAmount] = useState("1.0");
   const [attackerFundingAmount, setAttackerFundingAmount] = useState("1.0");
   const [attackerContributionAmount, setAttackerContributionAmount] =
     useState("1.0");
   const [attackAmount, setAttackAmount] = useState("1.0");
+  const [attack2JoinAmount, setAttack2JoinAmount] = useState("0.1");
   
   
   const [status, setStatus] = useState("");
@@ -76,15 +99,17 @@ function App() {
       return false;
     }
 
-    const [crowdfundCode, attackerCode] = await Promise.all([
+    const [crowdfundCode, attackerCode, attack2Code] = await Promise.all([
       _provider.getCode(CROWDFUND_CONTRACT_ADDRESS),
       _provider.getCode(ATTACKER_CONTRACT_ADDRESS),
+      _provider.getCode(ATTACK2_CONTRACT_ADDRESS),
     ]);
 
-    if (crowdfundCode === "0x" || attackerCode === "0x") {
+    if (crowdfundCode === "0x" || attackerCode === "0x" || attack2Code === "0x") {
       setStatus("❌ Contract not deployed or wrong network");
       setCrowdfund(null);
       setAttacker(null);
+      setAttack2(null);
       setProvider(_provider);
       setSigner(null);
       setAccount(null);
@@ -104,12 +129,18 @@ function App() {
       ATTACKER_ABI,
       _signer
     );
+    const _attack2 = new ethers.Contract(
+      ATTACK2_CONTRACT_ADDRESS,
+      ATTACK2_ABI,
+      _signer
+    );
 
     setProvider(_provider);
     setSigner(_signer);
     setAccount(_account);
     setCrowdfund(_crowdfund);
     setAttacker(_attacker);
+    setAttack2(_attack2);
     return true;
   };
 
@@ -133,10 +164,26 @@ function App() {
   const shortenedAddress = (addr) =>
     `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
-  const selectedRoleLabel =
-    selectedRole === "attacker"
-      ? "Attacker – Imported Account 1"
-      : "Honest User – Imported Account 2";
+  const roleOptions = {
+    attacker1: {
+      label: "Attacker 1 – Reentrancy (Imported Account 1)",
+      address: ATTACKER_ACCOUNT_ADDRESS,
+    },
+    attacker2: {
+      label: "Attacker 2 – DoS (Hardhat Account 3)",
+      address: ATTACKER2_ACCOUNT_ADDRESS,
+    },
+    honest1: {
+      label: "Honest User 1 – Imported Account", // legacy imported account
+      address: HONEST_ACCOUNT_ADDRESS,
+    },
+    honest2: {
+      label: "Honest User 2 – Hardhat Account 2",
+      address: HONEST_ACCOUNT_2_ADDRESS,
+    },
+  };
+
+  const selectedRoleLabel = roleOptions[selectedRole]?.label ?? "Unknown role";
 
   const roleStatus = useMemo(() => {
     if (!account) {
@@ -146,27 +193,25 @@ function App() {
       };
     }
 
-    if (selectedRole === "attacker") {
-      const matches = account === ATTACKER_ACCOUNT_ADDRESS.toLowerCase();
+    const selected = roleOptions[selectedRole];
+    if (!selected) {
       return {
-        color: matches ? "#22c55e" : "#ef4444",
-        text: matches
-          ? "Connected as Attacker (Imported Account 1)."
-          : "Selected role is Attacker, but MetaMask is using a different account. You can still read balances, but switch to the attacker account to send transactions.",
-        };
+        color: "#f97316",
+        text: "Unknown role selected",
+      };
     }
 
-    const matches = account === HONEST_ACCOUNT_ADDRESS.toLowerCase();
+    const matches = account === selected.address.toLowerCase();
     return {
       color: matches ? "#22c55e" : "#ef4444",
       text: matches
-        ? "Connected as Honest User (Imported Account 2)."
-        : "Selected role is Honest User, but MetaMask is using a different account. You can still read balances, but switch accounts to contribute as the honest user.",
+        ? `Connected as ${selected.label}.`
+        : `Selected role is ${selected.label}, but MetaMask is using a different account. You can still read balances, but switch accounts to send transactions for this role.`,
     };
   }, [account, selectedRole]);
 
   const ensureContractsReady = () => {
-    if (!provider || !crowdfund || !attacker) {
+    if (!provider || !crowdfund || !attacker || !attack2) {
       setStatus("❌ Contract not deployed or wrong network");
       return false;
     }
@@ -177,7 +222,7 @@ function App() {
     return true;
   };
 
-  const ensureAttackerAccount = () => {
+  const ensureAttack1Account = () => {
     if (!account) {
       setStatus("❌ Connect MetaMask first");
       return false;
@@ -189,14 +234,30 @@ function App() {
     return matches;
   };
 
+  const ensureAttack2Account = () => {
+    if (!account) {
+      setStatus("❌ Connect MetaMask first");
+      return false;
+    }
+    const matches = account === ATTACKER2_ACCOUNT_ADDRESS.toLowerCase();
+    if (!matches) {
+      setStatus("❌ Switch MetaMask to Attacker 2 (Hardhat account #3) before running this flow");
+    }
+    return matches;
+  };
+
   const ensureHonestAccount = () => {
     if (!account) {
       setStatus("❌ Connect MetaMask first");
       return false;
     }
-    const matches = account === HONEST_ACCOUNT_ADDRESS.toLowerCase();
+    const matches =
+      account === HONEST_ACCOUNT_ADDRESS.toLowerCase() ||
+      account === HONEST_ACCOUNT_2_ADDRESS.toLowerCase();
     if (!matches) {
-      setStatus("⚠️ You selected the honest flow but MetaMask is not using the honest account");
+      setStatus(
+        "⚠️ You selected the honest flow but MetaMask is not using one of the honest user accounts"
+      );
     }
     return matches;
   };
@@ -212,12 +273,13 @@ function App() {
         setStatus("❌ Wrong network: please switch MetaMask to Hardhat (31337)");
         return;
       }
-      const [crowdfundCode, attackerCode] = await Promise.all([
+      const [crowdfundCode, attackerCode, attack2Code] = await Promise.all([
         provider.getCode(CROWDFUND_CONTRACT_ADDRESS),
         provider.getCode(ATTACKER_CONTRACT_ADDRESS),
+        provider.getCode(ATTACK2_CONTRACT_ADDRESS),
       ]);
 
-      if (crowdfundCode === "0x" || attackerCode === "0x") {
+      if (crowdfundCode === "0x" || attackerCode === "0x" || attack2Code === "0x") {
         setStatus("❌ Contract not deployed or wrong network");
         return;
       }
@@ -227,17 +289,23 @@ function App() {
         _totalRaised,
         ownerAddress,
         _attackerContractContribution,
+        _attack2Contribution,
         _crowdfundBalanceWei,
         _attackerContractBalanceWei,
-        _attackerEOABalanceWei,
+        _attack2ContractBalanceWei,
+        _attacker1EOABalanceWei,
+        _attacker2EOABalanceWei,
       ] = await Promise.all([
         crowdfund.goal(),
         crowdfund.totalRaised(),
         crowdfund.owner(),
         crowdfund.contributions(ATTACKER_CONTRACT_ADDRESS),
+        crowdfund.contributions(ATTACK2_CONTRACT_ADDRESS),
         provider.getBalance(CROWDFUND_CONTRACT_ADDRESS),
         provider.getBalance(ATTACKER_CONTRACT_ADDRESS),
-        account ? provider.getBalance(account) : Promise.resolve(0n),
+        provider.getBalance(ATTACK2_CONTRACT_ADDRESS),
+        provider.getBalance(ATTACKER_ACCOUNT_ADDRESS),
+        provider.getBalance(ATTACKER2_ACCOUNT_ADDRESS),
       ]);
 
       setCrowdfundOwner(ownerAddress);
@@ -248,32 +316,42 @@ function App() {
       setAttackerContractBalance(
         ethers.formatEther(_attackerContractBalanceWei)
       );
-      setAttackerEOABalance(ethers.formatEther(_attackerEOABalanceWei));
+      setAttack2ContractBalance(
+        ethers.formatEther(_attack2ContractBalanceWei)
+      );
+      setAttackerEOABalance(ethers.formatEther(_attacker1EOABalanceWei));
+      setAttacker2EOABalance(ethers.formatEther(_attacker2EOABalanceWei));
       const contributed = ethers.formatEther(_attackerContractContribution);
       setAttackAmount(contributed);
       setAttackerContributionAmount(contributed);
+      setAttack2CrowdfundContribution(
+        ethers.formatEther(_attack2Contribution)
+      );
     } catch (err) {
       console.error(err);
       setStatus("Failed to load data");
     }
   };
-  // Pull the latest ETH balance for the active MetaMask account and store it in state
-  const refreshAttackerWalletBalance = async () => {
-    if (!provider || !account) return;
-    const balWei = await provider.getBalance(account);
-    setAttackerEOABalance(ethers.formatEther(balWei));
+  const refreshKnownWalletBalances = async () => {
+    if (!provider) return;
+    const [a1, a2] = await Promise.all([
+      provider.getBalance(ATTACKER_ACCOUNT_ADDRESS),
+      provider.getBalance(ATTACKER2_ACCOUNT_ADDRESS),
+    ]);
+    setAttackerEOABalance(ethers.formatEther(a1));
+    setAttacker2EOABalance(ethers.formatEther(a2));
   };
 
   useEffect(() => {
-    if (crowdfund && attacker && provider) {
+    if (crowdfund && attacker && attack2 && provider) {
       refreshData();
     }
-  }, [crowdfund, attacker, provider]);
+  }, [crowdfund, attacker, attack2, provider]);
 
-  // Load the attacker wallet balance once on initial render
+  // Load the known wallet balances once on initial render
   useEffect(() => {
     if (!window.ethereum) return;
-    refreshAttackerWalletBalance();
+     refreshKnownWalletBalances();
   }, []);
 
    // Keep UI in sync with MetaMask account changes
@@ -293,7 +371,7 @@ function App() {
         const hydrated = await hydrateWalletState();
         if (hydrated) {
           // Keep the displayed attacker balance aligned with the active MetaMask account
-          refreshAttackerWalletBalance();
+          refreshKnownWalletBalances();
           setStatus("Wallet updated ✅");
           refreshData();
         }
@@ -344,7 +422,7 @@ function App() {
 
   const handleAttackerDeposit = async () => {
     if (!ensureContractsReady()) return;
-    if (!ensureAttackerAccount()) return;
+    if (!ensureAttack1Account()) return;
     try {
       const value = ethers.parseEther(attackerFundingAmount || "0");
       if (value <= 0n) {
@@ -366,7 +444,7 @@ function App() {
 
   const handleContributeFromAttacker = async () => {
     if (!ensureContractsReady()) return;
-    if (!ensureAttackerAccount()) return;
+    if (!ensureAttack1Account()) return;
     try {
       const value = ethers.parseEther(attackerContributionAmount || "0");
       if (value <= 0n) {
@@ -393,7 +471,7 @@ function App() {
    
   const handleRunAttack = async () => {
     if (!ensureContractsReady()) return;
-    if (!ensureAttackerAccount()) return;
+    if (!ensureAttack1Account()) return;
     try {
       const value = ethers.parseEther(attackAmount || "0");
       if (value <= 0n) {
@@ -413,7 +491,7 @@ function App() {
 
   const handleWithdrawLoot = async () => {
     if (!ensureContractsReady()) return;
-    if (!ensureAttackerAccount()) return;
+    if (!ensureAttack1Account()) return;
     try {
       setStatus("Withdrawing loot to attacker wallet…");
       const tx = await attacker.withdrawLoot();
@@ -423,6 +501,58 @@ function App() {
     } catch (err) {
       console.error(err);
       setStatus("Withdraw loot failed ❌");
+    }
+  };
+
+  // === ATTACK 2 (DoS) ===
+  const handleAttack2Join = async () => {
+    if (!ensureContractsReady()) return;
+    if (!ensureAttack2Account()) return;
+    try {
+      const value = ethers.parseEther(attack2JoinAmount || "0");
+      if (value <= 0n) {
+        setStatus("❌ Enter a positive amount to join the crowdfund as Attacker 2");
+        return;
+      }
+      setStatus("Joining crowdfund as DoS attacker…");
+      const tx = await attack2.joinCrowdfund({ value });
+      await tx.wait();
+      setStatus("Attacker 2 joined the crowdfund ✅");
+      refreshData();
+    } catch (err) {
+      console.error(err);
+      setStatus("Join failed ❌ (check console)");
+    }
+  };
+
+  const handleAttack2BlockRefunds = async () => {
+    if (!ensureContractsReady()) return;
+    if (!ensureAttack2Account()) return;
+    try {
+      setStatus("Triggering refundAll() – expected to revert due to DoS…");
+      const tx = await attack2.blockRefunds();
+      await tx.wait();
+      setStatus("refundAll() completed (unexpected) ✅");
+    } catch (err) {
+      console.error(err);
+      setStatus("refundAll() reverted – refunds blocked by DoS attacker ❌");
+    } finally {
+      refreshData();
+    }
+  };
+
+  const handleAttack2Withdraw = async () => {
+    if (!ensureContractsReady()) return;
+    if (!ensureAttack2Account()) return;
+    try {
+      setStatus("Withdrawing any balance from Attack 2 contract…");
+      const tx = await attack2.withdraw();
+      await tx.wait();
+      setStatus("Attack 2 withdrawal complete ✅");
+      refreshData();
+    } catch (err) {
+      console.error(err);
+      setStatus("Withdraw failed ❌ (likely no balance or reverted call)");
     }
   };
 
@@ -453,9 +583,9 @@ function App() {
             🧪 Crowdfunding Attack Lab
           </h1>
           <p style={{ fontSize: "14px", opacity: 0.8, margin: 0 }}>
-            Visualizing a reentrancy attack on a vulnerable crowdfunding smart contract
-            (Hardhat local network). Use the role selector to view the flows as the attacker
-            or the honest user.
+            Visualizing a reentrancy attack and a DoS-style bulk refund attack on a vulnerable
+            crowdfunding smart contract (Hardhat local network). Use the role selector to view the
+            flows as the attackers or honest users.
           </p>
         </header>
 
@@ -524,45 +654,34 @@ function App() {
                 gap: "10px",
               }}
             >
-              <button
-                onClick={() => setSelectedRole("attacker")}
-                style={{
-                  padding: "12px",
-                  borderRadius: "12px",
-                  border: selectedRole === "attacker" ? "1px solid #22c55e" : "1px solid #1f2937",
-                  background: selectedRole === "attacker" ? "rgba(34, 197, 94, 0.1)" : "#0f172a",
-                  color: "#e5e7eb",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ fontWeight: 700, marginBottom: "4px" }}>
-                  Attacker – Imported Account 1
-                </div>
-                <div style={{ fontSize: "12px", opacity: 0.8 }}>
-                  {shortenedAddress(ATTACKER_ACCOUNT_ADDRESS)}
-                </div>
-              </button>
-
-              <button
-                onClick={() => setSelectedRole("honest")}
-                style={{
-                  padding: "12px",
-                  borderRadius: "12px",
-                  border: selectedRole === "honest" ? "1px solid #22c55e" : "1px solid #1f2937",
-                  background: selectedRole === "honest" ? "rgba(34, 197, 94, 0.1)" : "#0f172a",
-                  color: "#e5e7eb",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ fontWeight: 700, marginBottom: "4px" }}>
-                  Honest User – Imported Account 2
-                </div>
-                <div style={{ fontSize: "12px", opacity: 0.8 }}>
-                  {shortenedAddress(HONEST_ACCOUNT_ADDRESS)}
-                </div>
-              </button>
+              {Object.entries(roleOptions).map(([key, value]) => (
+                <button
+                  key={key}
+                  onClick={() => setSelectedRole(key)}
+                  style={{
+                    padding: "12px",
+                    borderRadius: "12px",
+                    border:
+                      selectedRole === key
+                        ? "1px solid #22c55e"
+                        : "1px solid #1f2937",
+                    background:
+                      selectedRole === key
+                        ? "rgba(34, 197, 94, 0.1)"
+                        : "#0f172a",
+                    color: "#e5e7eb",
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, marginBottom: "4px" }}>
+                    {value.label}
+                  </div>
+                  <div style={{ fontSize: "12px", opacity: 0.8 }}>
+                    {shortenedAddress(value.address)}
+                  </div>
+                </button>
+              ))}
             </div>
             <div style={{ fontSize: "12px", color: roleStatus.color }}>
               {roleStatus.text}
@@ -630,7 +749,7 @@ function App() {
             </div>
 
             <div style={{ fontSize: "13px", marginBottom: "4px" }}>
-              Contribute (honest user – Imported Account 2)
+              Contribute (any account – Honest Users 1 & 2 share this flow)
             </div>
             <div style={{ fontSize: "11px", opacity: 0.75, marginBottom: "6px" }}>
               You selected: {selectedRoleLabel}
@@ -680,10 +799,11 @@ function App() {
             }}
           >
             <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>
-              ⚔️ Attacker Contract Flow
+              ⚔️ Attack 1 – Reentrancy on Refund (Attacker 1)
             </h2>
             <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
-              Four-step attack: fund attacker contract → contribute from contract → run reentrancy → withdraw loot.
+              Four-step attack: fund attacker contract → contribute from contract → run reentrancy → withdraw loot. Keep this
+              flow untouched for Attacker 1.
             </p>
 
             <div
@@ -699,8 +819,8 @@ function App() {
               }}
             >
               <div>🏛 Crowdfund balance: {crowdfundBalance} ETH</div>
-              <div>🧨 Attacker contract balance: {attackerContractBalance} ETH</div>
-              <div>🧍 Attacker EOA balance: {attackerEOABalance} ETH</div>
+              <div>🧨 Attack 1 contract balance: {attackerContractBalance} ETH</div>
+              <div>🧍 Attacker 1 EOA balance: {attackerEOABalance} ETH</div>
             </div>
 
             
@@ -865,7 +985,7 @@ function App() {
                     Refresh Contract Balances
                   </button>
                   <button
-                    onClick={refreshAttackerWalletBalance}
+                    onClick={refreshKnownWalletBalances}
                     style={{
                       width: "100%",
                       padding: "10px",
@@ -877,7 +997,173 @@ function App() {
                       cursor: "pointer",
                     }}
                   >
-                    Refresh Attacker Wallet Balance
+                    Refresh Attacker Wallet Balances
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Attack 2 card */}
+          <div
+            style={{
+              background: "#020617",
+              borderRadius: "16px",
+              padding: "18px",
+              border: "1px solid #1f2937",
+              boxShadow: "0 20px 40px rgba(15,23,42,0.6)",
+            }}
+          >
+            <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>
+              🚫 Attack 2 – DoS on refundAll (Attacker 2)
+            </h2>
+            <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
+              Join the crowdfund with a small contribution, then trigger <code>refundAll()</code> so the attacker\'s
+              reverting fallback blocks the loop. This is independent from Attack 1.
+            </p>
+
+            <div
+              style={{
+                background: "#020617",
+                borderRadius: "12px",
+                padding: "10px",
+                border: "1px solid #111827",
+                fontSize: "13px",
+                marginBottom: "12px",
+                display: "grid",
+                gap: "6px",
+              }}
+            >
+              <div>🏛 Crowdfund balance: {crowdfundBalance} ETH</div>
+              <div>🛑 Attack 2 contract balance: {attack2ContractBalance} ETH</div>
+              <div>🧍 Attacker 2 wallet balance: {attacker2EOABalance} ETH</div>
+              <div>📌 Attack 2 contribution recorded: {attack2CrowdfundContribution} ETH</div>
+            </div>
+
+            <div style={{ display: "grid", gap: "10px" }}>
+              <div>
+                <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+                  Step 1: Join Crowdfund as DoS Attacker
+                </div>
+                <div style={{ fontSize: "11px", opacity: 0.75, marginBottom: "6px" }}>
+                  Sends a small amount from the Attack 2 contract so it appears in the contributors list.
+                </div>
+                <input
+                  value={attack2JoinAmount}
+                  onChange={(e) => setAttack2JoinAmount(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #0c408aff",
+                    background: "#020617",
+                    color: "#e5e7eb",
+                    fontSize: "13px",
+                    marginBottom: "8px",
+                  }}
+                />
+                <button
+                  onClick={handleAttack2Join}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #1f2937",
+                    background: "#0ea5e9",
+                    color: "white",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Join Crowdfund (Attack 2)
+                </button>
+              </div>
+
+              <div>
+                <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+                  Step 2: Trigger refundAll() (DoS)
+                </div>
+                <div style={{ fontSize: "11px", opacity: 0.75, marginBottom: "6px" }}>
+                  Calls the vulnerable bulk refund loop. The reverting fallback should block all refunds.
+                </div>
+                <button
+                  onClick={handleAttack2BlockRefunds}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: "#f97316",
+                    color: "white",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Trigger refundAll() (expected to revert)
+                </button>
+              </div>
+
+              <div>
+                <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+                  Step 3: Withdraw from Attack 2 contract
+                </div>
+                <div style={{ fontSize: "11px", opacity: 0.75, marginBottom: "6px" }}>
+                  Optional cleanup for any ETH sent directly to the attacker contract.
+                </div>
+                <button
+                  onClick={handleAttack2Withdraw}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: "1px solid #1f2937",
+                    background: "#16a34a",
+                    color: "white",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Withdraw (Attack 2)
+                </button>
+              </div>
+
+              <div>
+                <div style={{ fontSize: "13px", marginBottom: "4px" }}>
+                  Refresh balances
+                </div>
+                <div style={{ display: "grid", gap: "8px" }}>
+                  <button
+                    onClick={refreshData}
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "10px",
+                      border: "1px solid #1f2937",
+                      background: "#334155",
+                      color: "white",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Refresh Contract Balances
+                  </button>
+                  <button
+                    onClick={refreshKnownWalletBalances}
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "10px",
+                      border: "1px solid #1f2937",
+                      background: "#475569",
+                      color: "white",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Refresh Attacker Wallet Balances
                   </button>
                 </div>
               </div>

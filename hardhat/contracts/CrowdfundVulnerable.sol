@@ -8,6 +8,8 @@ contract CrowdfundVulnerable {
     uint256 public totalRaised;
 
     mapping(address => uint256) public contributions;
+    address[] public contributors;
+    mapping(address => bool) private isContributor;
 
     event Contributed(address indexed user, uint256 amount);
     event Refunded(address indexed user, uint256 amount);
@@ -25,6 +27,11 @@ contract CrowdfundVulnerable {
 
         contributions[msg.sender] += msg.value;
         totalRaised += msg.value;
+
+        if (!isContributor[msg.sender]) {
+            contributors.push(msg.sender);
+            isContributor[msg.sender] = true;
+        }
 
         emit Contributed(msg.sender, msg.value);
     }
@@ -64,5 +71,26 @@ contract CrowdfundVulnerable {
 
     function getBalance() external view returns (uint256) {
         return address(this).balance;
+    }
+
+    // Vulnerable bulk refund flow (susceptible to DoS via failing receiver)
+    function refundAll() external {
+        require(block.timestamp >= deadline, "Campaign still active");
+
+        for (uint256 i = 0; i < contributors.length; i++) {
+            address contributor = contributors[i];
+            uint256 amount = contributions[contributor];
+
+            if (amount > 0) {
+                // Using transfer (2300 gas) + no error handling: any revert blocks the loop
+                payable(contributor).transfer(amount);
+                contributions[contributor] = 0;
+                totalRaised -= amount;
+            }
+        }
+    }
+
+    function getContributorsCount() external view returns (uint256) {
+        return contributors.length;
     }
 }

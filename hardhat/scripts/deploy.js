@@ -39,7 +39,7 @@ async function main() {
   const crowdfundAddress = await crowdfund.getAddress();
   console.log("CrowdfundVulnerable deployed at:", crowdfundAddress);
 
-  // Deploy RefundAttacker and pass the crowdfund address
+  // Deploy RefundAttacker (Attack 1) and pass the crowdfund address
   const Attacker = await ethers.getContractFactory("RefundAttacker");
   const attacker = await Attacker.deploy(crowdfundAddress);
   await attacker.waitForDeployment();
@@ -47,15 +47,25 @@ async function main() {
   const attackerAddress = await attacker.getAddress();
   console.log("RefundAttacker deployed at:", attackerAddress);
 
+  // Deploy Attack 2 DoS attacker and pass the crowdfund address
+  const Attack2 = await ethers.getContractFactory("Attack2DoSAttacker");
+  const attack2 = await Attack2.deploy(crowdfundAddress);
+  await attack2.waitForDeployment();
+
+  const attack2Address = await attack2.getAddress();
+  console.log("Attack2DoSAttacker deployed at:", attack2Address);
+
   writeAddressesToFrontend({
     crowdfund: crowdfundAddress,
     attacker: attackerAddress,
+    attack2DoSAttacker: attack2Address,
   });
 
   console.log("\n🚀 Deployment complete!");
   console.log("-----------------------------------");
   console.log("Crowdfund Address:", crowdfundAddress);
   console.log("Attacker Contract Address:", attackerAddress);
+  console.log("Attack 2 Contract Address:", attack2Address);
   console.log("-----------------------------------");
 }
 
