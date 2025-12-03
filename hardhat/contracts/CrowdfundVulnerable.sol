@@ -11,6 +11,10 @@ contract CrowdfundVulnerable {
     address[] public contributors;
     mapping(address => bool) private isContributor;
 
+    // Track unique contributors for UI visualization
+    address[] private contributorsList;
+    mapping(address => bool) private hasContributed;
+
     event Contributed(address indexed user, uint256 amount);
     event Refunded(address indexed user, uint256 amount);
     event Withdrawn(address indexed owner, uint256 amount);
@@ -24,6 +28,11 @@ contract CrowdfundVulnerable {
     function contribute() external payable {
         require(block.timestamp < deadline, "Campaign ended");
         require(msg.value > 0, "Send ETH");
+
+        if (!hasContributed[msg.sender]) {
+            hasContributed[msg.sender] = true;
+            contributorsList.push(msg.sender);
+        }
 
         contributions[msg.sender] += msg.value;
         totalRaised += msg.value;
@@ -92,5 +101,14 @@ contract CrowdfundVulnerable {
 
     function getContributorsCount() external view returns (uint256) {
         return contributors.length;
+    }
+    // Returns the list of all addresses that have ever contributed
+    function getContributors() external view returns (address[] memory) {
+        return contributorsList;
+    }
+
+    // Helper to read a single user contribution (same as public mapping, but explicit for UI)
+    function getContributionOf(address user) external view returns (uint256) {
+        return contributions[user];
     }
 }

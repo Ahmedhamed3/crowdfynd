@@ -26,6 +26,8 @@ const CROWDFUND_ABI = [
   "function refundAll()",
   "function getContributorsCount() view returns (uint256)",
   "function contributors(uint256) view returns (address)",
+  "function getContributors() view returns (address[])",
+  "function getContributionOf(address) view returns (uint256)",
   "function getBalance() view returns (uint256)",
 
 ];
@@ -79,6 +81,8 @@ function App() {
   const [attackAmount, setAttackAmount] = useState("1.0");
   const [attack2FundingAmount, setAttack2FundingAmount] = useState("0.2");
   const [attack2JoinAmount, setAttack2JoinAmount] = useState("0.1");
+
+  const [contributors, setContributors] = useState([]);
   
   
   const [status, setStatus] = useState("");
@@ -264,6 +268,27 @@ function App() {
     return matches;
   };
 
+  const loadContributors = async () => {
+    if (!crowdfund) return;
+    try {
+      const addrs = await crowdfund.getContributors();
+
+      const rows = await Promise.all(
+        addrs.map(async (addr) => {
+          const amount = await crowdfund.getContributionOf(addr);
+          return {
+            address: addr,
+            amountEth: Number(ethers.formatEther(amount)),
+          };
+        })
+      );
+
+      setContributors(rows);
+    } catch (err) {
+      console.error("loadContributors error", err);
+    }
+  };
+
 
   // Load balances / goal
   const refreshData = async () => {
@@ -329,6 +354,8 @@ function App() {
       setAttack2CrowdfundContribution(
         ethers.formatEther(_attack2Contribution)
       );
+
+      await loadContributors();
     } catch (err) {
       console.error(err);
       setStatus("Failed to load data");
@@ -774,6 +801,78 @@ function App() {
               <div>📈 Total raised: {totalRaised} ETH</div>
               <div>💰 Contract balance: {crowdfundBalance} ETH</div>
             </div>
+
+            <h3 style={{ marginTop: 24, marginBottom: 8 }}>Contributors</h3>
+            <div
+              style={{
+                background: "#020617",
+                borderRadius: 8,
+                padding: 12,
+                border: "1px solid #1f2937",
+                maxHeight: 220,
+                overflowY: "auto",
+                fontSize: 12,
+              }}
+            >
+              {contributors.length === 0 && (
+                <div style={{ color: "#9ca3af" }}>No contributions yet.</div>
+              )}
+
+              {contributors.map((c) => (
+                <div
+                  key={c.address}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    padding: "4px 0",
+                    borderBottom: "1px solid #111827",
+                  }}
+                >
+                  <span
+                    style={{
+                      maxWidth: 200,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {c.address}
+                  </span>
+                  <span>{c.amountEth.toFixed(4)} ETH</span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={async () => {
+                if (!crowdfund) return;
+                try {
+                  setStatus("Calling refundAll()…");
+                  const tx = await crowdfund.refundAll();
+                  await tx.wait();
+                  setStatus("refundAll() succeeded ✅");
+                  await refreshData();
+                } catch (err) {
+                  console.error(err);
+                  // This is where the DoS by Attack 2 is visible
+                  setStatus("refundAll() reverted ❌ (maybe blocked by DoS attacker?)");
+                  await refreshData();
+                }
+              }}
+              style={{
+                marginTop: 12,
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "none",
+                background: "#f97316",
+                color: "white",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Try Global Refund (refundAll)
+            </button>
 
             <div style={{ fontSize: "13px", marginBottom: "4px" }}>
               Contribute (any account – Honest Users 1 & 2 share this flow)
