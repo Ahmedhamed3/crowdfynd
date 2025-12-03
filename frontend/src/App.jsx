@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { ethers } from "ethers";
+import contractAddresses from "./contractAddresses.json";
 
 
 // === DEPLOYED CONTRACT ADDRESSES ===
-const CROWDFUND_CONTRACT_ADDRESS =
-  "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const ATTACKER_CONTRACT_ADDRESS =
-  "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+const CROWDFUND_CONTRACT_ADDRESS = contractAddresses.crowdfund;
+const ATTACKER_CONTRACT_ADDRESS = contractAddresses.attacker;
 
 // === WELL-KNOWN LOCAL ACCOUNTS ===
 const ATTACKER_ACCOUNT_ADDRESS =
@@ -24,7 +23,7 @@ const CROWDFUND_ABI = [
 const ATTACKER_ABI = [
   "function attacker() view returns (address)",
   "function depositToCrowdfund() payable",
-  "function runAttack(uint256 attackAmount)",
+  "function runAttack()",
   "function withdrawLoot()",
   "function getCrowdfundInfo() view returns (uint256, uint256, uint256)",
   "function getAttackerContractBalance() view returns (uint256)",
@@ -46,7 +45,7 @@ function App() {
   const [attackerWalletBalance, setAttackerWalletBalance] = useState("0");
   const [contributeAmount, setContributeAmount] = useState("1.0");
   const [depositAmount, setDepositAmount] = useState("1.0");
-  const [attackAmount, setAttackAmount] = useState("1.0");
+  
   
   const [status, setStatus] = useState("");
 
@@ -250,7 +249,7 @@ function App() {
 
     try {
       setStatus("Running reentrancy attack…");
-      const tx = await attacker.runAttack(ethers.parseEther(attackAmount || "0"));
+      const tx = await attacker.runAttack();
       await tx.wait();
       setStatus("Attack transaction finished ✅");
       refreshData();
@@ -591,20 +590,7 @@ function App() {
                 <div style={{ fontSize: "13px", marginBottom: "4px" }}>
                   Step 2: Run Attack (reentrancy)
                 </div>
-                <input
-                  value={attackAmount}
-                  onChange={(e) => setAttackAmount(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "10px",
-                    border: "1px solid #1f2937",
-                    background: "#020617",
-                    color: "#e5e7eb",
-                    fontSize: "13px",
-                    marginBottom: "8px",
-                  }}
-                />
+                
                 <button
                   onClick={handleRunAttack}
                   style={{
