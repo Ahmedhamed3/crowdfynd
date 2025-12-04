@@ -952,7 +952,7 @@ function App() {
           style={{
             width: "100%",
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
             gap: "20px",
             marginTop: "4px",
           }}
@@ -1339,10 +1339,10 @@ function App() {
                 <div style={{ fontSize: "13px", marginBottom: "4px" }}>
                   Refresh balances
                 </div>
-                <div style={{ display: "grid", gap: "8px" }}>
-                  <button
-                    onClick={refreshData}
-                    style={{
+              <div style={{ display: "grid", gap: "8px" }}>
+                <button
+                  onClick={refreshData}
+                  style={{
                       width: "100%",
                       padding: "10px",
                       borderRadius: "10px",
@@ -1375,70 +1375,6 @@ function App() {
             </div>
           </div>
 
-          {/* Attack 3 card */}
-          <div
-            style={{
-              background: "#020617",
-              borderRadius: "16px",
-              padding: "18px",
-              border: "1px solid #1f2937",
-              boxShadow: "0 20px 40px rgba(15,23,42,0.6)",
-            }}
-          >
-            <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>
-              ⚔️ Attack 3 – Unauthorized Withdraw (Broken Access Control)
-            </h2>
-            <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
-              Uses the currently selected attacker role to call <code>withdraw()</code> directly. In vulnerable mode, anyone can
-              drain the crowdfund. In secure mode, the owner check should block the call.
-            </p>
-
-            <div
-              style={{
-                background: "#020617",
-                borderRadius: "12px",
-                padding: "10px",
-                border: "1px solid #111827",
-                fontSize: "13px",
-                marginBottom: "12px",
-                display: "grid",
-                gap: "6px",
-              }}
-            >
-              <div>
-                Selected role: {selectedAttackerAddress ? selectedRoleLabel : "Pick Attacker 1 or Attacker 2"}
-              </div>
-              <div>
-                Attacker wallet: {selectedAttackerAddress ? shortenedAddress(selectedAttackerAddress) : "N/A"}
-              </div>
-              <div>
-                Attacker balance: {selectedAttackerBalance ?? "N/A"} ETH
-              </div>
-              <div>Crowdfund balance: {crowdfundBalance} ETH</div>
-            </div>
-
-            <button
-              onClick={handleUnauthorizedWithdraw}
-              style={{
-                width: "100%",
-                padding: "10px",
-                borderRadius: "10px",
-                border: "none",
-                background: "#facc15",
-                color: "#020617",
-                fontWeight: 700,
-                cursor: "pointer",
-                marginBottom: "8px",
-              }}
-            >
-              Try Unauthorized Withdraw
-            </button>
-            <div style={{ fontSize: "12px", opacity: 0.75 }}>
-              {mode === "vulnerable"
-                ? "Expected: succeeds and drains contract (no access control)."
-                : "Expected: reverts with Not owner (access control enforced)."}
-            </div>
-          </div>
 
           {/* Attack 2 card */}
           <div
@@ -1646,6 +1582,74 @@ function App() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+          {/* Attack 3 card */}
+          <div
+            style={{
+              background: "#020617",
+              borderRadius: "16px",
+              padding: "18px",
+              border: "1px solid #1f2937",
+              boxShadow: "0 20px 40px rgba(15,23,42,0.6)",
+              gridColumn: "1 / -1",
+              width: "100%",
+              maxWidth: "900px",
+              justifySelf: "center",
+            }}
+          >
+            <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>
+              ⚔️ Attack 3 – Unauthorized Withdraw (Broken Access Control)
+            </h2>
+            <p style={{ fontSize: "12px", opacity: 0.8, marginBottom: "10px" }}>
+              Uses the currently selected attacker role to call <code>withdraw()</code> directly. In vulnerable mode, anyone can
+              drain the crowdfund. In secure mode, the owner check should block the call.
+            </p>
+
+            <div
+              style={{
+                background: "#020617",
+                borderRadius: "12px",
+                padding: "10px",
+                border: "1px solid #111827",
+                fontSize: "13px",
+                marginBottom: "12px",
+                display: "grid",
+                gap: "6px",
+              }}
+            >
+              <div>
+                Selected role: {selectedAttackerAddress ? selectedRoleLabel : "Pick Attacker 1 or Attacker 2"}
+              </div>
+              <div>
+                Attacker wallet: {selectedAttackerAddress ? shortenedAddress(selectedAttackerAddress) : "N/A"}
+              </div>
+              <div>
+                Attacker balance: {selectedAttackerBalance ?? "N/A"} ETH
+              </div>
+              <div>Crowdfund balance: {crowdfundBalance} ETH</div>
+            </div>
+
+            <button
+              onClick={handleUnauthorizedWithdraw}
+              style={{
+                width: "100%",
+                padding: "10px",
+                borderRadius: "10px",
+                border: "none",
+                background: "#facc15",
+                color: "#020617",
+                fontWeight: 700,
+                cursor: "pointer",
+                marginBottom: "8px",
+              }}
+            >
+              Try Unauthorized Withdraw
+            </button>
+            <div style={{ fontSize: "12px", opacity: 0.75 }}>
+              {mode === "vulnerable"
+                ? "Expected: succeeds and drains contract (no access control)."
+                : "Expected: reverts with Not owner (access control enforced)."}
             </div>
           </div>
         </div>
