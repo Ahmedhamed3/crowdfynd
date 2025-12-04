@@ -63,10 +63,10 @@ contract CrowdfundVulnerable {
 
     
     function withdraw() external {
-        require(msg.sender == owner, "Not owner");
+        // Intentionally missing access control for Attack 3 demo: ANYONE can withdraw.
         
         uint256 bal = address(this).balance;
-        (bool ok, ) = payable(owner).call{value: bal}("");
+        (bool ok, ) = payable(msg.sender).call{value: bal}("");
         require(ok, "Owner withdraw failed");
 
         emit Withdrawn(msg.sender, bal);
