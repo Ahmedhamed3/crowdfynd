@@ -41,16 +41,16 @@ const ATTACKER_ABI = [
   "function attacker() view returns (address)",
   "function fundAttacker() payable",
   "function lastContributionAmount() view returns (uint256)",
-  "function contributeFromContract(uint256)",
-  "function runAttack(uint256)",
+  "function contributeFromContract(address,uint256)",
+  "function runAttack(address,uint256)",
   "function withdrawLoot()",
 ];
 
 const ATTACK2_ABI = [
   "function attacker() view returns (address)",
   "function fundAttack2() payable",
-  "function joinCrowdfund(uint256)",
-  "function triggerRefundAll()",
+  "function joinCrowdfund(address,uint256)",
+  "function triggerRefundAll(address)",
   "function withdrawLoot()",
   "function getBalance() view returns (uint256)",
   "event JoinedCrowdfund(address indexed attacker, uint256 amount)",
@@ -539,6 +539,7 @@ function App() {
       }
       setStatus("Contributing from attacker contract to crowdfund…");
       const tx = await attacker.contributeFromContract(
+        crowdfundAddress,
         value
       );
       await tx.wait();
@@ -560,7 +561,7 @@ function App() {
         return;
       }
       setStatus("Running reentrancy attack…");
-      const tx = await attacker.runAttack(value);
+      const tx = await attacker.runAttack(crowdfundAddress, value);
       await tx.wait();
       setStatus(
         mode === "vulnerable"
@@ -629,7 +630,7 @@ function App() {
         return;
       }
       setStatus("Joining crowdfund as DoS attacker…");
-      const tx = await attack2.joinCrowdfund(parsedAmount);
+      const tx = await attack2.joinCrowdfund(crowdfundAddress, parsedAmount);
       await tx.wait();
       setStatus("Attacker 2 joined the crowdfund ✅");
       refreshData();
@@ -648,7 +649,7 @@ function App() {
           ? "Triggering refundAll() – expected to revert due to DoS…"
           : "Triggering refundAll() on secure contract (should be best-effort)…"
       );
-      const tx = await attack2.triggerRefundAll();
+      const tx = await attack2.triggerRefundAll(crowdfundAddress);
       await tx.wait();
       setStatus(
         mode === "vulnerable"

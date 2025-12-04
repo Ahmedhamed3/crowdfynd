@@ -47,22 +47,21 @@ async function main() {
   const crowdfundSecureAddress = await crowdfundSecure.getAddress();
   console.log("CrowdfundSecure deployed at:", crowdfundSecureAddress);
 
-  // Deploy RefundAttacker (Attack 1) and pass the crowdfund address
+  // Deploy RefundAttacker (Attack 1)
   const Attacker = await ethers.getContractFactory("RefundAttacker");
-  const attacker = await Attacker.deploy(crowdfundAddress);
+  const attacker = await Attacker.deploy();
   await attacker.waitForDeployment();
 
   const attackerAddress = await attacker.getAddress();
   console.log("RefundAttacker deployed at:", attackerAddress);
 
-  // Deploy Attack 2 DoS attacker and pass the crowdfund address
+  // Deploy Attack 2 DoS attacker
   const Attack2 = await ethers.getContractFactory(
     "Attack2DoSAttacker",
     attacker2Signer
   );
 
   const attack2 = await Attack2.deploy(
-    crowdfund.target,
     "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
   );
   await attack2.waitForDeployment();

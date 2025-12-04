@@ -12,13 +12,10 @@ async function deployCrowdfundFixture() {
   const crowdfund = await Crowdfund.deploy(100, 60);
 
   const RefundAttacker = await ethers.getContractFactory("RefundAttacker");
-  const refundAttacker = await RefundAttacker.connect(attacker1).deploy(
-    crowdfund.target
-  );
+  const refundAttacker = await RefundAttacker.connect(attacker1).deploy();
 
   const Attack2 = await ethers.getContractFactory("Attack2DoSAttacker");
   const attack2 = await Attack2.connect(attacker2).deploy(
-    crowdfund.target,
     attacker2.address
   );
 
@@ -63,7 +60,7 @@ describe("CrowdfundVulnerable bulk refunds", function () {
       .fundAttack2({ value: ethers.parseEther("0.2") });
     await attack2
       .connect(attacker2)
-      .joinCrowdfund(ethers.parseEther("0.1"));
+      .joinCrowdfund(crowdfund.target, ethers.parseEther("0.1"));
 
     await expect(crowdfund.refundAll()).to.be.revertedWith(
       "Refund blocked by contributor"
@@ -91,14 +88,16 @@ describe("CrowdfundVulnerable – Attack 1 reentrancy", function () {
       .fundAttacker({ value: ethers.parseEther("1") });
     await refundAttacker
       .connect(attacker1)
-      .contributeFromContract(ethers.parseEther("1"));
+      .contributeFromContract(crowdfund.target, ethers.parseEther("1"));
 
     const crowdfundBalanceBefore = await ethers.provider.getBalance(
       crowdfund.target
     );
 
     await expect(
-      refundAttacker.connect(attacker1).runAttack(ethers.parseEther("1"))
+      refundAttacker
+        .connect(attacker1)
+        .runAttack(crowdfund.target, ethers.parseEther("1"))
     ).to.not.be.reverted;
 
     const crowdfundBalanceAfter = await ethers.provider.getBalance(

