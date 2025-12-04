@@ -952,8 +952,9 @@ function App() {
           style={{
             width: "100%",
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "20px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+            gap: "24px",
+            alignItems: "start",
             marginTop: "4px",
           }}
         >
@@ -1596,6 +1597,7 @@ function App() {
               width: "100%",
               maxWidth: "900px",
               justifySelf: "center",
+              marginTop: "24px",
             }}
           >
             <h2 style={{ fontSize: "18px", marginBottom: "6px" }}>
